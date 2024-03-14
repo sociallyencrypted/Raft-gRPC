@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+service RaftNode {
+    rpc AppendEntries (AppendEntriesRequest) returns (AppendEntriesReply) {}
+    rpc RequestVote (RequestVoteRequest) returns (RequestVoteReply) {}
+    rpc ServeClient (ServeClientRequest) returns (ServeClientReply) {}
+}
+
+// Define the message types for AppendEntries, RequestVote, and ServeClient RPCs
