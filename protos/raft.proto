@@ -6,4 +6,47 @@ service RaftNode {
     rpc ServeClient (ServeClientRequest) returns (ServeClientReply) {}
 }
 
-// Define the message types for AppendEntries, RequestVote, and ServeClient RPCs
+message AppendEntriesRequest {
+    int32 term = 1;
+    int32 leaderId = 2;
+    int32 prevLogIndex = 3;
+    int32 prevLogTerm = 4;
+    repeated LogEntry entries = 5;
+    int32 leaderCommit = 6;
+    int64 leaseDuration = 7;  // Duration of the leader lease
+}
+
+message AppendEntriesReply {
+    int32 term = 1;
+    bool success = 2;
+    int32 conflictingTerm = 3;  // Term of the conflicting entry (for consistency check)
+    int32 conflictingIndex = 4; // Index of the conflicting entry (for consistency check)
+}
+
+message RequestVoteRequest {
+    int32 term = 1;
+    int32 candidateId = 2;
+    int32 lastLogIndex = 3;
+    int32 lastLogTerm = 4;
+    int64 oldLeaderLeaseDuration = 5;  // Duration of the old leader's lease
+}
+
+message RequestVoteReply {
+    int32 term = 1;
+    bool voteGranted = 2;
+}
+
+message LogEntry {
+    int32 term = 1;
+    string operation = 2;  // e.g., "SET key value" or "NO-OP"
+}
+
+message ServeClientRequest {
+    string request = 1;  // e.g., "SET key value" or "GET key"
+}
+
+message ServeClientReply {
+    string data = 1;  // Value for a GET request
+    int32 leaderId = 2;  // Current leader ID
+    bool success = 3;  // Whether the request was successful
+}
