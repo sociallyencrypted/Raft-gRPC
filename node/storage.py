@@ -34,3 +34,6 @@ class Storage:
             key, value = line.split(':')
             self.metadata[key] = value
         f.close()
+        
+    def get(self, key):
+        return self.metadata.get(key, None)

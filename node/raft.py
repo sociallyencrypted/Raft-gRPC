@@ -24,6 +24,14 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         # Redirect client to leader if necessary
         # Replicate SET requests to other nodes
         # Return GET response if leader and lease acquired
-        pass
+        if request.action == raft_pb2.GET:
+            if self.role == "leader":
+                return self.storage.get(request.key)
+        elif request.action == raft_pb2.SET:
+            if self.role == "leader":
+                self.storage.append_log(request.entry)
+                return "OK"
+        else:
+            return "Error"
 
     # Other helper methods for Raft state machine, leader election, log replication, etc.
