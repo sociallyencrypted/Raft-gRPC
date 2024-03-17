@@ -10,7 +10,9 @@ class RaftClient:
     def get(self, key):
         # Send GET request to leader
         # Handle leader redirection and retry
+        pass
 
     def set(self, key, value):
         # Send SET request to leader
         # Handle leader redirection and retry
+        pass

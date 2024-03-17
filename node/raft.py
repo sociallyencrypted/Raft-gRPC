@@ -8,20 +8,22 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         self.node_id = node_id
         self.node_addresses = node_addresses
         self.storage = Storage(node_id)
-        # Initialize Raft state and leader lease
+        
 
     def AppendEntries(self, request, context):
         # Handle AppendEntries RPC
         # Process incoming entries, update log, and respond accordingly
+        pass
 
     def RequestVote(self, request, context):
         # Handle RequestVote RPC
-        # Vote for candidate or deny based on Raft rules
+        pass
 
     def ServeClient(self, request, context):
         # Handle client requests (GET and SET)
         # Redirect client to leader if necessary
         # Replicate SET requests to other nodes
         # Return GET response if leader and lease acquired
+        pass
 
     # Other helper methods for Raft state machine, leader election, log replication, etc.
