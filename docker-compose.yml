@@ -1,26 +1,15 @@
 version: '3'
 services:
-  node1:
+  node:
     build: .
     environment:
-      - NODE_ID=0
+      - NODE_ID_FILE=/app/node_id.txt
     ports:
-      - "50051:50051"
-    command: ["python", "run.py", "--node_id=0"]
-
-  node2:
-    build: .
-    environment:
-      - NODE_ID=1
-    ports:
-      - "50052:50052"
-    command: ["python", "run.py", "--node_id=1"]
-
-  # Add more node services as needed
+      - "50051-50060:50051-50060"
+    command: ["python", "run.py", "--node"]
 
   client:
     build: .
     depends_on:
-      - node1
-      - node2
+      - node
     command: ["python", "run.py", "--client"]
