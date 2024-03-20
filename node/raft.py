@@ -21,17 +21,34 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
 
     def ServeClient(self, request, context):
         # Handle client requests (GET and SET)
-        # Redirect client to leader if necessary
+        # Redirect client to leader if necessary by sending leader id in leader_id field
         # Replicate SET requests to other nodes
-        # Return GET response if leader and lease acquired
+        # Return GET response if leader and lease acquired by sending value in value field
         if request.action == raft_pb2.GET:
             if self.role == "leader":
-                return self.storage.get(request.key)
+                value = self.storage.get(request.key)
+                return raft_pb2.ClientResponse(value=value)
+            else:
+                if self.leader_id:
+                    return raft_pb2.ClientResponse(leader_id=self.leader_id)
+                else:
+                    return raft_pb2.ClientResponse(leader_id="NONE")
         elif request.action == raft_pb2.SET:
             if self.role == "leader":
                 self.storage.append_log(request.entry)
+                # propogate the log to other nodes
+                for node_address in self.node_addresses:
+                    if node_address != f'node:{50050 + self.node_id}':
+                        threading.Thread(target=self.replicate_log, args=(node_address, request.entry)).start()
                 return "OK"
         else:
-            return "Error"
+            if self.leader_id:
+                return raft_pb2.ClientResponse(leader_id=self.leader_id)
+            else:
+                return raft_pb2.ClientResponse(leader_id="NONE")
+            
+    def replicate_log(self, node_address, entry):
+        # Function to be completed
+        pass
 
     # Other helper methods for Raft state machine, leader election, log replication, etc.
