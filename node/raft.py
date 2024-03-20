@@ -1,7 +1,7 @@
 import grpc
 import threading
-from protos import raft_pb2, raft_pb2_grpc
-from storage import Storage
+import raft_pb2, raft_pb2_grpc
+from node.storage import Storage
 
 class RaftNode(raft_pb2_grpc.RaftNodeServicer):
     def __init__(self, node_id, node_addresses):

@@ -1,5 +1,5 @@
 import grpc
-from protos import raft_pb2, raft_pb2_grpc
+import raft_pb2, raft_pb2_grpc
 import time
 
 class RaftClient:
