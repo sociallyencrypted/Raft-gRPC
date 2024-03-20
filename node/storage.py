@@ -7,13 +7,11 @@ class Storage:
 
     def append_log(self, entry):
         self.logs.append(entry)
-        # Append log to disk
         f = open(f'logs_{self.node_id}.txt', 'a')
         f.write(entry)
         f.close()
 
     def dump_state(self):
-        # Dump logs, metadata, and other state to disk
         f = open(f'logs_{self.node_id}.txt', 'w')
         for log in self.logs:
             f.write(log)
@@ -24,7 +22,6 @@ class Storage:
         f.close()
         
     def load_state(self):
-        # Load logs, metadata, and other state from disk
         f = open(f'logs_{self.node_id}.txt', 'r')
         for line in f:
             self.logs.append(line)
