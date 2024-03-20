@@ -2,6 +2,7 @@ import argparse
 import os
 from node.raft import RaftNode
 from client.client import RaftClient
+import  random
 
 def main():
     parser = argparse.ArgumentParser()
@@ -22,10 +23,11 @@ def main():
         # Start gRPC server for the node
 
 def get_node_id():
-    node_id_file = os.environ.get('NODE_ID_FILE')
-    with open(node_id_file, 'r') as f:
-        node_id = int(f.read().strip())
-    return node_id
+    # node_id_file = os.environ.get('NODE_ID_FILE')
+    # with open(node_id_file, 'r') as f:
+    #     node_id = int(f.read().strip())
+    # return node_id
+    return random.randint(1, 10)
 
 def get_node_addresses():
     node_addresses = []

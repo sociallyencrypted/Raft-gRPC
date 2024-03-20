@@ -1,3 +1,5 @@
+import os
+
 class Storage:
     def __init__(self, node_id):
         self.node_id = node_id
@@ -22,6 +24,10 @@ class Storage:
         f.close()
         
     def load_state(self):
+        if not os.path.exists(f'logs_{self.node_id}.txt'):
+            f = open(f'logs_{self.node_id}.txt', 'w')
+            f.close()
+            return
         f = open(f'logs_{self.node_id}.txt', 'r')
         for line in f:
             self.logs.append(line)
