@@ -31,4 +31,12 @@ class RaftClient:
             stub = raft_pb2_grpc.RaftNodeStub(channel)
             entry = f'{key}:{value}'
             response = stub.ServeClient(raft_pb2.ClientRequest(action=raft_pb2.SET, entry=entry))
-            return response.value
+            if response.leader_id:
+                if response.leader_id == "NONE":
+                    time.sleep(0.1)
+                    return self.set(key, value)
+                self.leader_id = response.leader_id
+                return self.set(key, value)
+            else:
+                if response.value == "OK":
+                    return "OK"

@@ -40,7 +40,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                 for node_address in self.node_addresses:
                     if node_address != f'node:{50050 + self.node_id}':
                         threading.Thread(target=self.replicate_log, args=(node_address, request.entry)).start()
-                return "OK"
+                return raft_pb2.ClientResponse(value="OK")
         else:
             if self.leader_id:
                 return raft_pb2.ClientResponse(leader_id=self.leader_id)
