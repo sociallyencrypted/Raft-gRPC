@@ -5,14 +5,29 @@ import time
 class RaftClient:
     def __init__(self, node_addresses):
         self.node_addresses = node_addresses
-        self.leader_id = None
+        self.leader_id = self.get_leader()
+        
+    def get_leader(self):
+        for node_address in self.node_addresses:
+            try:
+                print(node_address)
+                with grpc.insecure_channel(node_address) as channel:
+                    stub = raft_pb2_grpc.RaftNodeStub(channel)
+                    response = stub.ServeClient(raft_pb2.ServeClientRequest(request="GET LEADER"))
+                    if response.leader_id:
+                        return response.leader_id
+                    else:
+                        return int(node_address.split(":")[1]) - 50050
+            except:
+                continue
+        return None
         
 
     def get(self, key):
         leader_ip = self.node_addresses[self.leader_id]
         with grpc.insecure_channel(leader_ip) as channel:
             stub = raft_pb2_grpc.RaftNodeStub(channel)
-            response = stub.ServeClient(raft_pb2.ClientRequest(action=raft_pb2.GET, key=key))
+            response = stub.ServeClient(raft_pb2.ServeClientRequest(request = f'GET {key}'))
             if response.leader_id: # This means the node to which the request was sent is not a leader. It hence sends a guess of who the leader is.
                 if response.leader_id == "NONE": # This means there is no leader. The client should try again later.
                     time.sleep(0.1)
@@ -29,8 +44,7 @@ class RaftClient:
         leader_ip = self.node_addresses[self.leader_id]
         with grpc.insecure_channel(leader_ip) as channel:
             stub = raft_pb2_grpc.RaftNodeStub(channel)
-            entry = f'{key}:{value}'
-            response = stub.ServeClient(raft_pb2.ClientRequest(action=raft_pb2.SET, entry=entry))
+            response = stub.ServeClient(raft_pb2.ServeClientRequest(request = f'SET {key} {value}'))
             if response.leader_id:
                 if response.leader_id == "NONE":
                     time.sleep(0.1)

@@ -32,7 +32,7 @@ def get_node_id():
 def get_node_addresses():
     node_addresses = []
     for i in range(1, 11):  # Assume a maximum of 10 nodes
-        node_address = f'node:{50050 + i}'
+        node_address = f'localhost:{50050 + i}'
         node_addresses.append(node_address)
     return node_addresses
 

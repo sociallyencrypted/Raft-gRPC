@@ -2,13 +2,14 @@ import grpc
 import threading
 import raft_pb2, raft_pb2_grpc
 from node.storage import Storage
+from concurrent import futures
 
 class RaftNode(raft_pb2_grpc.RaftNodeServicer):
     def __init__(self, node_id, node_addresses):
         self.node_id = node_id
         self.node_addresses = node_addresses
         self.storage = Storage(node_id)
-        
+        self.role = "leader"        
 
     def AppendEntries(self, request, context):
         # Handle AppendEntries RPC
@@ -20,28 +21,32 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         pass
 
     def ServeClient(self, request, context):
-        if request.action == raft_pb2.GET:
+        request = request.request.split(" ") # Split the request into action and key/value
+        if request[0] == "GET":
             if self.role == "leader":
-                value = self.storage.get(request.key) # Get the value from the storage
-                return raft_pb2.ClientResponse(value=value) # Return the value to the client
+                key = request[1] # Get the key from the request
+                value = self.storage.get(key)
+                return raft_pb2.ServeClientResponse(value=value) # Return the value to the client
             else:
                 if self.leader_id:
-                    return raft_pb2.ClientResponse(leader_id=self.leader_id) # Return the leader_id to the client
+                    return raft_pb2.ServeClientResponse(leader_id=self.leader_id) # Return the leader_id to the client
                 else:
-                    return raft_pb2.ClientResponse(leader_id="NONE") # Return "NONE" if there is no leader
-        elif request.action == raft_pb2.SET:
+                    return raft_pb2.ServeClientResponse(leader_id="NONE") # Return "NONE" if there is no leader
+        elif request[0] == "SET":
+            key = request[1] # Get the key from the request
+            value = request[2] # Get the value from the request
             if self.role == "leader":
-                self.storage.append_log(request.entry) # Append the log to the storage
+                self.storage.append_log(key, value)
                 # propogate the log to other nodes
                 for node_address in self.node_addresses:
                     if node_address != f'node:{50050 + self.node_id}': # Skip the current node
                         threading.Thread(target=self.replicate_log, args=(node_address, request.entry)).start() # Start a new thread to replicate the log
-                return raft_pb2.ClientResponse(value="OK") # Return "OK" to the client
+                return raft_pb2.ServeClientResponse(value="OK") # Return "OK" to the client
         else:
             if self.leader_id:
-                return raft_pb2.ClientResponse(leader_id=self.leader_id) # Return the leader_id to the client
+                return raft_pb2.ServeClientResponse(leader_id=self.leader_id) # Return the leader_id to the client
             else:
-                return raft_pb2.ClientResponse(leader_id="NONE") # Return "NONE" if there is no leader
+                return raft_pb2.ServeClientResponse(leader_id="NONE") # Return "NONE" if there is no leader
             
     def replicate_log(self, node_address, entry):
         # Function to be completed
