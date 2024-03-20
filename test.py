@@ -2,16 +2,18 @@ from node.raft import RaftNode
 from client.client import RaftClient
 import random
 import time
+import threading
+
+node_addresses=[]
 
 def main():
     
     node_id = get_node_id()
-    node_addresses = get_node_addresses()
+    node_addresses.append(f'localhost:{50050 + node_id}')
     node = RaftNode(node_id, node_addresses)
+    threading.Thread(target=node.serve).start()
+    time.sleep(1)
     
-    time.sleep(5)
-    
-    node_addresses = get_node_addresses()
     client = RaftClient(node_addresses)
     
     # set a key-value pair
@@ -27,13 +29,6 @@ def main():
 
 def get_node_id():
     return random.randint(1, 10)
-
-def get_node_addresses():
-    node_addresses = []
-    for i in range(1, 11):  # Assume a maximum of 10 nodes
-        node_address = f'localhost:{50050 + i}'
-        node_addresses.append(node_address)
-    return node_addresses
 
 if __name__ == '__main__':
     main()

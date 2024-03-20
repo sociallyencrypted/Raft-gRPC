@@ -12,8 +12,12 @@ class RaftClient:
             try:
                 print(node_address)
                 with grpc.insecure_channel(node_address) as channel:
+                    # print if channel is connected
+                    print(channel)
                     stub = raft_pb2_grpc.RaftNodeStub(channel)
-                    response = stub.ServeClient(raft_pb2.ServeClientRequest(request="GET LEADER"))
+                    print(stub)
+                    response = stub.ServeClient(raft_pb2.ServeClientRequest(request = 'GET LEADER'))
+                    print(response)
                     if response.leader_id:
                         return response.leader_id
                     else:

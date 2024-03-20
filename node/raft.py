@@ -9,7 +9,15 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         self.node_id = node_id
         self.node_addresses = node_addresses
         self.storage = Storage(node_id)
-        self.role = "leader"        
+        self.role = "leader" # Hardcoded for now. Needs to be changed
+        
+    def serve(node):
+        server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+        raft_pb2_grpc.add_RaftNodeServicer_to_server(node, server)
+        server.add_insecure_port(f'localhost:{50050 + node.node_id}')
+        server.start()
+        print(f"Server started on port {50050 + node.node_id}")
+        server.wait_for_termination()     
 
     def AppendEntries(self, request, context):
         # Handle AppendEntries RPC
@@ -24,6 +32,8 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         request = request.request.split(" ") # Split the request into action and key/value
         if request[0] == "GET":
             if self.role == "leader":
+                if key == "LEADER":
+                    return raft_pb2.ServeClientResponse(leader_id=self.node_id)
                 key = request[1] # Get the key from the request
                 value = self.storage.get(key)
                 return raft_pb2.ServeClientResponse(value=value) # Return the value to the client
