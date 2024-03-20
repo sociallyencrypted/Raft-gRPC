@@ -20,32 +20,28 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         pass
 
     def ServeClient(self, request, context):
-        # Handle client requests (GET and SET)
-        # Redirect client to leader if necessary by sending leader id in leader_id field
-        # Replicate SET requests to other nodes
-        # Return GET response if leader and lease acquired by sending value in value field
         if request.action == raft_pb2.GET:
             if self.role == "leader":
-                value = self.storage.get(request.key)
-                return raft_pb2.ClientResponse(value=value)
+                value = self.storage.get(request.key) # Get the value from the storage
+                return raft_pb2.ClientResponse(value=value) # Return the value to the client
             else:
                 if self.leader_id:
-                    return raft_pb2.ClientResponse(leader_id=self.leader_id)
+                    return raft_pb2.ClientResponse(leader_id=self.leader_id) # Return the leader_id to the client
                 else:
-                    return raft_pb2.ClientResponse(leader_id="NONE")
+                    return raft_pb2.ClientResponse(leader_id="NONE") # Return "NONE" if there is no leader
         elif request.action == raft_pb2.SET:
             if self.role == "leader":
-                self.storage.append_log(request.entry)
+                self.storage.append_log(request.entry) # Append the log to the storage
                 # propogate the log to other nodes
                 for node_address in self.node_addresses:
-                    if node_address != f'node:{50050 + self.node_id}':
-                        threading.Thread(target=self.replicate_log, args=(node_address, request.entry)).start()
-                return raft_pb2.ClientResponse(value="OK")
+                    if node_address != f'node:{50050 + self.node_id}': # Skip the current node
+                        threading.Thread(target=self.replicate_log, args=(node_address, request.entry)).start() # Start a new thread to replicate the log
+                return raft_pb2.ClientResponse(value="OK") # Return "OK" to the client
         else:
             if self.leader_id:
-                return raft_pb2.ClientResponse(leader_id=self.leader_id)
+                return raft_pb2.ClientResponse(leader_id=self.leader_id) # Return the leader_id to the client
             else:
-                return raft_pb2.ClientResponse(leader_id="NONE")
+                return raft_pb2.ClientResponse(leader_id="NONE") # Return "NONE" if there is no leader
             
     def replicate_log(self, node_address, entry):
         # Function to be completed
