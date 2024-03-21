@@ -46,4 +46,7 @@ class Storage:
         
     def get(self, key):
         print(f'Getting log: {key}')
-        return self.metadata[key]
+        if key in self.metadata:
+            return self.metadata[key]
+        else:
+            return None

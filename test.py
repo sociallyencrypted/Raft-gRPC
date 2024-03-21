@@ -26,6 +26,9 @@ def main():
     # get the value for the key
     response = client.get(key)
     print(response)
+    
+    response = client.get("key2")
+    print(response)
 
 def get_node_id():
     return 4

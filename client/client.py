@@ -7,7 +7,7 @@ class RaftClient:
         self.node_addresses = node_addresses
         self.leaderId = None
         self.leaderIP = None
-        self.update_leader()
+        self.update_leader() # Initialize the leaderId and leaderIP
         
     def update_leader(self):
         self.leaderId = self.get_leader()
@@ -21,11 +21,11 @@ class RaftClient:
             try:
                 with grpc.insecure_channel(node_address) as channel:
                     stub = raft_pb2_grpc.RaftNodeStub(channel)
-                    response = stub.ServeClient(raft_pb2.ServeClientRequest(request = 'GET LEADER'))
-                    if response.leaderId:
+                    response = stub.ServeClient(raft_pb2.ServeClientRequest(request = 'GET LEADER')) # Send a GET LEADER request
+                    if response.leaderId: # If a leader is found, return the leaderId
                         print("Leader found at port", int(response.leaderId) + 50050)
                         return response.leaderId
-                    else:
+                    else: # If no leader is found, continue to the next node
                         print("No leader found")
             except:
                 continue
@@ -36,19 +36,20 @@ class RaftClient:
         with grpc.insecure_channel(self.leaderIP) as channel:
             stub = raft_pb2_grpc.RaftNodeStub(channel)
             print(f"Sending GET request for {key} to leader at {self.leaderIP}")
-            response = stub.ServeClient(raft_pb2.ServeClientRequest(request = f'GET {key}'))
             try:
-                if response.data:
+                response = stub.ServeClient(raft_pb2.ServeClientRequest(request = f'GET {key}'))
+                try:
                     return response.data
-                else:
-                    return "Key not found"
-            except AttributeError:
-                if response.leaderId:
-                    if response.leaderId == "NONE":
-                        time.sleep(0.1)
+                except AttributeError: # If the response does not have a "data" attribute, it means that the response has a leaderId
+                    if response.leaderId:
+                        if response.leaderId == "NONE":
+                            time.sleep(0.1)
+                            return self.get(key)
+                        self.leaderId = response.leaderId
                         return self.get(key)
-                    self.leaderId = response.leaderId
-                    return self.get(key)
+            except grpc.RpcError as e:
+                return "ERROR: " + e.details()
+            
                 
 
     def set(self, key, value):

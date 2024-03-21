@@ -36,6 +36,12 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                 if key == "LEADER":
                     return raft_pb2.ServeClientReply(leaderId=self.node_id)
                 value = self.storage.get(key)
+                if value is None:
+                    # set context.status to NOT_FOUND
+                    context.set_code(grpc.StatusCode.NOT_FOUND)
+                    context.set_details("Key not found")
+                    # send back the context
+                    return raft_pb2.ServeClientReply()
                 return raft_pb2.ServeClientReply(data=value) # Return the value to the client
             else:
                 if self.leaderId:
