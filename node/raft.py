@@ -9,7 +9,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         self.node_addresses = node_addresses
         self.storage = Storage(node_id)
         self.role = "leader" # Hardcoded for now. Needs to be changed
-        self.leader_id = node_id # Hardcoded for now. Needs to be changed
+        self.leaderId = node_id # Hardcoded for now. Needs to be changed
         
     def serve(node):
         server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
@@ -34,14 +34,14 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
             if self.role == "leader":
                 key = request[1] # Get the key from the request
                 if key == "LEADER":
-                    return raft_pb2.ServeClientReply(leader_id=self.node_id)
+                    return raft_pb2.ServeClientReply(leaderId=self.node_id)
                 value = self.storage.get(key)
                 return raft_pb2.ServeClientReply(data=value) # Return the value to the client
             else:
-                if self.leader_id:
-                    return raft_pb2.ServeClientReply(leader_id=self.leader_id) # Return the leader_id to the client
+                if self.leaderId:
+                    return raft_pb2.ServeClientReply(leaderId=self.leaderId) # Return the leaderId to the client
                 else:
-                    return raft_pb2.ServeClientReply(leader_id="NONE") # Return "NONE" if there is no leader
+                    return raft_pb2.ServeClientReply(leaderId="NONE") # Return "NONE" if there is no leader
         elif request[0] == "SET":
             key = request[1] # Get the key from the request
             value = request[2] # Get the value from the request
@@ -52,10 +52,10 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                         self.replicate_log(node, key, value)
                 return raft_pb2.ServeClientReply(success=True) # Return "OK" to the client
         else:
-            if self.leader_id:
-                return raft_pb2.ServeClientReply(leader_id=self.leader_id) # Return the leader_id to the client
+            if self.leaderId:
+                return raft_pb2.ServeClientReply(leaderId=self.leaderId) # Return the leaderId to the client
             else:
-                return raft_pb2.ServeClientReply(leader_id="NONE") # Return "NONE" if there is no leader
+                return raft_pb2.ServeClientReply(leaderId="NONE") # Return "NONE" if there is no leader
             
     def replicate_log(self, node_address, key, value):
         # Use the AppendEntries RPC to replicate log entries to other nodes
