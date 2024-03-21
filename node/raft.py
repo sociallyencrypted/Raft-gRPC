@@ -29,15 +29,12 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         pass
 
     def ServeClient(self, request, context):
-        print(f'Client request is {request}')
         request = request.request.split(" ")
-        print(request)
         if request[0] == "GET":
             if self.role == "leader":
                 key = request[1] # Get the key from the request
                 if key == "LEADER":
                     return raft_pb2.ServeClientReply(leader_id=self.node_id)
-                print(f'Client tells me to get {key}')
                 value = self.storage.get(key)
                 return raft_pb2.ServeClientReply(data=value) # Return the value to the client
             else:
@@ -50,10 +47,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
             value = request[2] # Get the value from the request
             if self.role == "leader":
                 self.storage.append_log(key, value)
-                # # propogate the log to other nodes
-                # for node_address in self.node_addresses:
-                #     if node_address != f'node:{50050 + self.node_id}': # Skip the current node
-                #         threading.Thread(target=self.replicate_log, args=(node_address, request.entry)).start() # Start a new thread to replicate the log
+                # # propogate the log to other nodes: to be done
                 return raft_pb2.ServeClientReply(success=True) # Return "OK" to the client
         else:
             if self.leader_id:
