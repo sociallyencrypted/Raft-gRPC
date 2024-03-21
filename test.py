@@ -28,7 +28,7 @@ def main():
     print(response)
 
 def get_node_id():
-    return random.randint(1, 10)
+    return 4
 
 if __name__ == '__main__':
     main()

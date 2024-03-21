@@ -9,6 +9,7 @@ class Storage:
 
     def append_log(self, key, value):
         self.metadata[key] = value
+        print(f'Appending log: {key}:{value}')
         entry = f'{key}:{value}\n'
         f = open(f'logs_{self.node_id}.txt', 'a')
         f.write(entry)
@@ -44,4 +45,5 @@ class Storage:
         f.close()
         
     def get(self, key):
-        return self.metadata.get(key, None)
+        print(f'Getting log: {key}')
+        return self.metadata[key]

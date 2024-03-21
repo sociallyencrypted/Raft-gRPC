@@ -14,12 +14,15 @@ def main():
         # Run as client
         node_addresses = get_node_addresses()
         client = RaftClient(node_addresses)
+        client.set("key1", "value1")
+        print(client.get("key1"))
         # Interact with the client
     elif args.node:
         # Run as Raft node
-        node_id = get_node_id()
+        node_id = 4
         node_addresses = get_node_addresses()
         node = RaftNode(node_id, node_addresses)
+        node.serve()
         # Start gRPC server for the node
 
 def get_node_id():
