@@ -8,16 +8,13 @@ class RaftClient:
         self.leader_id = 4
         
     def get_leader(self):
+        # Function does not work right now. Needs to be changed.
         for node_address in self.node_addresses:
             try:
                 print(node_address)
                 with grpc.insecure_channel(node_address) as channel:
-                    # print if channel is connected
-                    print(channel)
                     stub = raft_pb2_grpc.RaftNodeStub(channel)
-                    print(stub)
                     response = stub.ServeClient(raft_pb2.ServeClientRequest(request = 'GET LEADER'))
-                    print(response)
                     if response.leader_id:
                         return response.leader_id
                     else:
