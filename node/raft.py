@@ -1,5 +1,4 @@
 import grpc
-import threading
 import raft_pb2, raft_pb2_grpc
 from node.storage import Storage
 from concurrent import futures
@@ -10,6 +9,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         self.node_addresses = node_addresses
         self.storage = Storage(node_id)
         self.role = "leader" # Hardcoded for now. Needs to be changed
+        self.leader_id = node_id # Hardcoded for now. Needs to be changed
         
     def serve(node):
         server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
@@ -47,7 +47,9 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
             value = request[2] # Get the value from the request
             if self.role == "leader":
                 self.storage.append_log(key, value)
-                # # propogate the log to other nodes: to be done
+                for node in self.node_addresses:
+                    if node != f'localhost:{50050 + self.node_id}':
+                        self.replicate_log(node, key, value)
                 return raft_pb2.ServeClientReply(success=True) # Return "OK" to the client
         else:
             if self.leader_id:
@@ -55,8 +57,9 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
             else:
                 return raft_pb2.ServeClientReply(leader_id="NONE") # Return "NONE" if there is no leader
             
-    def replicate_log(self, node_address, entry):
-        # Function to be completed
+    def replicate_log(self, node_address, key, value):
+        # Use the AppendEntries RPC to replicate log entries to other nodes
+        # To be implemented
         pass
 
     # Other helper methods for Raft state machine, leader election, log replication, etc.
