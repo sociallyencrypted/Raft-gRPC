@@ -4,7 +4,12 @@ from node.storage import Storage
 from concurrent import futures
 import random
 import threading
-from threading import Lock
+from threading import Lock, Timer
+from configparser import ConfigParser
+
+config = ConfigParser()
+config.read('config.ini')
+LEASE_DURATION = int(config['DEFAULT']['LEASE_DURATION'])
 
 class RaftNode(raft_pb2_grpc.RaftNodeServicer):
     def __init__(self, node_id, node_addresses):
@@ -18,10 +23,11 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         self.electionTimer = None
         self.vote_count = 1
         self.vote_count_lock = Lock()
+        self.leaseTimer = None
 
 
     def start_election_timeout(self):
-        self.electionTimer = threading.Timer(random.uniform(5, 10), self.initiate_election)
+        self.electionTimer = Timer(random.uniform(5, 10), self.initiate_election)
         self.electionTimer.start()
 
     def initiate_election(self):
@@ -74,7 +80,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         if self.electionTimer is not None:
             self.electionTimer.cancel()
         print("resetting_election")
-        self.electionTimer = threading.Timer(random.uniform(15, 20), self.initiate_election)
+        self.electionTimer = Timer(random.uniform(15, 20), self.initiate_election)
         self.electionTimer.start()
 
     def RequestVote(self, request, context):
@@ -146,7 +152,9 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         if self.role != 'leader':
             return
         print(f"Leader Node {self.node_id} sending heartbeat to followers")
+        self.reacquire_lease()
         for address in self.node_addresses:
+            # try to get acks from majority of nodes. if fail, step down as leader: TO BE DONE
             if address != f'localhost:{50050 + self.node_id}':
                 try:
                     channel = grpc.insecure_channel(address)
@@ -157,7 +165,8 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                         prevLogIndex=0,
                         prevLogTerm=0,
                         entries=[],
-                        leaderCommit=0
+                        leaderCommit=0,
+                        leaseDuration = LEASE_DURATION
                     ))
                 except Exception as e:
                     print(f"Failed to send heartbeat to {address}: {e}")
@@ -165,6 +174,13 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         # Reschedule the heartbeat
         self.heartbeat_timer = threading.Timer(1, self.send_heartbeat)
         self.heartbeat_timer.start()
+        
+    def reacquire_lease(self):
+        # restart the lease timer
+        if self.leaseTimer is not None:
+            self.leaseTimer.cancel()
+        self.leaseTimer = threading.Timer(LEASE_DURATION, self.reacquire_lease)
+        self.leaseTimer.start()
 
 
     def ServeClient(self, request, context):
