@@ -80,7 +80,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         if self.electionTimer is not None:
             self.electionTimer.cancel()
         print("resetting_election")
-        self.electionTimer = Timer(random.uniform(15, 20), self.initiate_election)
+        self.electionTimer = Timer(random.uniform(5, 10), self.initiate_election)
         self.electionTimer.start()
 
     def RequestVote(self, request, context):
