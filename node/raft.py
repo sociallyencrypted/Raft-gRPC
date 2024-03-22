@@ -114,11 +114,40 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         pass
 
     def ServeClient(self, request, context):
-        # Implement the logic for handling client requests
-        # This is where you handle client interactions like setting a key-value or retrieving a value
-        pass
-
-    # Any additional methods or helpers required for the Raft protocol can go here
+        request = request.request.split(" ")
+        if request[0] == "GET":
+            if self.role == "leader":
+                key = request[1] # Get the key from the request
+                if key == "LEADER":
+                    return raft_pb2.ServeClientReply(leaderId=self.node_id)
+                value = self.storage.get(key)
+                if value is None:
+                    # set context.status to NOT_FOUND
+                    context.set_code(grpc.StatusCode.NOT_FOUND)
+                    context.set_details("Key not found")
+                    # send back the context
+                    return raft_pb2.ServeClientReply()
+                return raft_pb2.ServeClientReply(data=value) # Return the value to the client
+            else:
+                if self.leaderId:
+                    return raft_pb2.ServeClientReply(leaderId=self.leaderId) # Return the leaderId to the client
+                else:
+                    return raft_pb2.ServeClientReply(leaderId="NONE") # Return "NONE" if there is no leader
+        elif request[0] == "SET":
+            key = request[1] # Get the key from the request
+            value = request[2] # Get the value from the request
+            if self.role == "leader":
+                self.storage.append_log(key, value)
+                for node in self.node_addresses:
+                    if node != f'localhost:{50050 + self.node_id}':
+                        self.replicate_log(node, key, value)
+                return raft_pb2.ServeClientReply(success=True) # Return "OK" to the client
+        else:
+            if self.leaderId:
+                return raft_pb2.ServeClientReply(leaderId=self.leaderId) # Return the leaderId to the client
+            else:
+                return raft_pb2.ServeClientReply(leaderId="NONE") # Return "NONE" if there is no leader
+            
 
 if __name__ == "__main__":
     # Example code to start a RaftNode
