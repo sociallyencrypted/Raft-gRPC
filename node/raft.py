@@ -18,13 +18,15 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         self.electionTimer = None
         self.vote_count = 1
         self.vote_count_lock = Lock()
-        self.start_election_timeout()
+
 
     def start_election_timeout(self):
         self.electionTimer = threading.Timer(random.uniform(5, 10), self.initiate_election)
         self.electionTimer.start()
 
     def initiate_election(self):
+        if self.role == 'leader':  # Prevent initiating election if already a leader
+            return
         self.role = "candidate"
         self.currentTerm += 1
         self.votedFor = self.node_id
@@ -58,16 +60,11 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                 if self.vote_count > len(self.node_addresses) // 2 and self.role == 'candidate':
                     self.become_leader()
 
-    def become_leader(self):
-        self.role = 'leader'
-        print(f"Node {self.node_id} is now the leader for term {self.currentTerm}")
-        # Additional logic for becoming a leader
-
     def get_last_log_info(self):
         if self.storage.logs:
             last_log = self.storage.logs[-1]
             parts = last_log.strip().split(':')
-            last_log_term = int(parts[0])  
+            last_log_term = int(parts[0])
             last_log_index = len(self.storage.logs) - 1
             return last_log_index, last_log_term
         else:
@@ -76,7 +73,8 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
     def reset_election_timer(self):
         if self.electionTimer is not None:
             self.electionTimer.cancel()
-        self.electionTimer = threading.Timer(random.uniform(5, 10), self.initiate_election)
+        print("resetting_election")
+        self.electionTimer = threading.Timer(random.uniform(15, 20), self.initiate_election)
         self.electionTimer.start()
 
     def RequestVote(self, request, context):
@@ -97,8 +95,6 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         localLastLogIndex, localLastLogTerm = self.get_last_log_info()
         return not (lastLogTerm < localLastLogTerm or (lastLogTerm == localLastLogTerm and lastLogIndex < localLastLogIndex))
 
-    # Implement AppendEntries, ServeClient, etc.
-
     def serve(self):
         server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
         raft_pb2_grpc.add_RaftNodeServicer_to_server(self, server)
@@ -109,9 +105,67 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         server.wait_for_termination()
 
     def AppendEntries(self, request, context):
-        # Implement the logic for handling AppendEntries RPC calls
-        # This method is used for replicating log entries and performing heartbeats
-        pass
+        with self.vote_count_lock:
+            if request.term < self.currentTerm:
+                # Reply with failure if the term is outdated
+                return raft_pb2.AppendEntriesReply(
+                    term=self.currentTerm,
+                    success=False,
+                    conflictingTerm=0,
+                    conflictingIndex=0
+                )
+
+            # Reset the election timer on receiving the heartbeat
+            self.reset_election_timer()
+            # print("This should be working")
+            print(f"Heartbeat received from leader {request.leaderId} for term {request.term}")
+
+            # Send successful reply
+            return raft_pb2.AppendEntriesReply(
+                term=self.currentTerm,
+                success=True,
+                conflictingTerm=0,
+                conflictingIndex=0
+            )
+
+    def become_leader(self):
+        self.role = 'leader'
+        self.leaderId = self.node_id
+        print(f"Node {self.node_id} is now the leader for term {self.currentTerm}")
+        # Cancel the election timer as this node is now the leader
+        if self.electionTimer is not None:
+            self.electionTimer.cancel()
+        # Start the heartbeat process
+        self.start_heartbeat()
+
+    def start_heartbeat(self):
+        self.heartbeat_timer = threading.Timer(1, self.send_heartbeat)
+        self.heartbeat_timer.start()
+
+    def send_heartbeat(self):
+        if self.role != 'leader':
+            return
+        print(f"Leader Node {self.node_id} sending heartbeat to followers")
+        for address in self.node_addresses:
+            if address != f'localhost:{50050 + self.node_id}':
+                try:
+                    channel = grpc.insecure_channel(address)
+                    stub = raft_pb2_grpc.RaftNodeStub(channel)
+                    stub.AppendEntries(raft_pb2.AppendEntriesRequest(
+                        term=self.currentTerm,
+                        leaderId=self.node_id,
+                        prevLogIndex=0,
+                        prevLogTerm=0,
+                        entries=[],
+                        leaderCommit=0
+                    ))
+                except Exception as e:
+                    print(f"Failed to send heartbeat to {address}: {e}")
+
+        # Reschedule the heartbeat
+        self.heartbeat_timer = threading.Timer(1, self.send_heartbeat)
+        self.heartbeat_timer.start()
+
 
     def ServeClient(self, request, context):
         request = request.request.split(" ")
@@ -149,11 +203,11 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                 return raft_pb2.ServeClientReply(leaderId="NONE") # Return "NONE" if there is no leader
             
 
-if __name__ == "__main__":
-    # Example code to start a RaftNode
-    # You might need to adjust this based on how you initialize your nodes and their configurations
-    node_id = 1  # Node ID should be unique for each node
-    node_addresses = ['localhost:50051', 'localhost:50052', 'localhost:50053']  # List of addresses for all nodes in the cluster
-    raft_node = RaftNode(node_id, node_addresses)
-    # Removed the call to serve() as per your instructions
+# if __name__ == "__main__":
+#     # Example code to start a RaftNode
+#     # You might need to adjust this based on how you initialize your nodes and their configurations
+#     node_id = 1  # Node ID should be unique for each node
+#     node_addresses = ['localhost:50051', 'localhost:50052', 'localhost:50053']  # List of addresses for all nodes in the cluster
+#     raft_node = RaftNode(node_id, node_addresses)
+#     # Removed the call to serve() as per your instructions
 
