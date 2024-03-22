@@ -19,7 +19,7 @@ def main():
         # Interact with the client
     elif args.node:
         # Run as Raft node
-        node_id = 4
+        node_id = int(input("Enter Node ID"))
         node_addresses = get_node_addresses()
         node = RaftNode(node_id, node_addresses)
         node.serve()
@@ -34,7 +34,7 @@ def get_node_id():
 
 def get_node_addresses():
     node_addresses = []
-    for i in range(1, 11):  # Assume a maximum of 10 nodes
+    for i in range(1, 3):  # Assume a maximum of 10 nodes
         node_address = f'localhost:{50050 + i}'
         node_addresses.append(node_address)
     return node_addresses
