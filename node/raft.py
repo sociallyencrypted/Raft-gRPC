@@ -155,6 +155,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         self.reacquire_lease()
         for address in self.node_addresses:
             # try to get acks from majority of nodes. if fail, step down as leader: TO BE DONE
+            total_acks = 0
             if address != f'localhost:{50050 + self.node_id}':
                 try:
                     channel = grpc.insecure_channel(address)
@@ -168,8 +169,19 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                         leaderCommit=0,
                         leaseDuration = LEASE_DURATION
                     ))
+                    total_acks += 1
                 except Exception as e:
                     print(f"Failed to send heartbeat to {address}: {e}")
+                    
+            if total_acks > len(self.node_addresses) // 2:
+                self.become_leader()
+                return
+            else:
+                print(f"Failed to get majority acks from followers. Total acks: {total_acks}")
+                self.role = 'follower'
+                self.leaderId = None
+                self.initiate_election()
+                return
 
         # Reschedule the heartbeat
         self.heartbeat_timer = threading.Timer(1, self.send_heartbeat)
