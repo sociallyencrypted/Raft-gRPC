@@ -137,13 +137,17 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
     def become_leader(self):
         self.role = 'leader'
         self.leaderId = self.node_id
-        print(f"Node {self.node_id} is now the leader for term {self.currentTerm}")
+        self.print_and_dump(f"Node {self.node_id} became the leader for term {self.currentTerm}")
         # Cancel the election timer as this node is now the leader
         if self.electionTimer is not None:
             self.electionTimer.cancel()
         # Start the heartbeat process
         self.start_heartbeat()
-
+        
+    def print_and_dump(self, statement):
+        print(statement)
+        self.storage.write_to_dump(statement)
+        
     def start_heartbeat(self):
         self.heartbeat_timer = threading.Timer(1, self.send_heartbeat)
         self.heartbeat_timer.start()

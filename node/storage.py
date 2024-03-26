@@ -6,6 +6,11 @@ class Storage:
         self.logs = []
         self.metadata = {}
         self.load_state()
+        
+    def write_to_dump(self, statement):
+        f = open(f'dump_{self.node_id}.txt', 'a')
+        f.write(statement)
+        f.close()
 
     def append_log(self, key, value):
         self.metadata[key] = value
