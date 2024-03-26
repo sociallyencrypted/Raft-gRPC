@@ -223,7 +223,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
             key = request[1] # Get the key from the request
             value = request[2] # Get the value from the request
             if self.role == "leader":
-                self.storage.append_log(key, value)
+                self.storage.append_log("SET", self.currentTerm, key, value)
                 for node in self.node_addresses:
                     if node != f'localhost:{50050 + self.node_id}':
                         self.replicate_log(node, key, value)
