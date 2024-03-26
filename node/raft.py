@@ -114,17 +114,29 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         with self.vote_count_lock:
             if request.term < self.currentTerm:
                 # Reply with failure if the term is outdated
+                self.print_and_dump(f"Node {self.node_id} rejected AppendEntries request from leader {request.leaderId}.")
                 return raft_pb2.AppendEntriesReply(
                     term=self.currentTerm,
                     success=False,
                     conflictingTerm=0,
                     conflictingIndex=0
                 )
-
+                
+            # Reply with failure if log doesn't contain an entry at prevLogIndex whose term matches prevLogTerm
+            if len(self.storage.logs) < request.prevLogIndex or self.storage.logs[request.prevLogIndex].term != request.prevLogTerm:
+                self.print_and_dump(f"Node {self.node_id} rejected AppendEntries request from leader {request.leaderId}.")
+                return raft_pb2.AppendEntriesReply(
+                    term=self.currentTerm,
+                    success=False,
+                    conflictingTerm=0,
+                    conflictingIndex=0
+                )
+                
+            # Append the entries to the log
+            self.update_follower_logs(request.prevLogIndex, request.leaderCommit, request.entries)
+            self.print_and_dump(f"Node {self.node_id} accepted AppendEntries request from leader {request.leaderId}.")
             # Reset the election timer on receiving the heartbeat
             self.reset_election_timer()
-            # print("This should be working")
-            print(f"Heartbeat received from leader {request.leaderId} for term {request.term}")
 
             # Send successful reply
             return raft_pb2.AppendEntriesReply(
@@ -133,6 +145,25 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                 conflictingTerm=0,
                 conflictingIndex=0
             )
+            
+    def update_follower_logs(self, prefixLen, leaderCommit, suffix):
+        if len(suffix) > 0 or leaderCommit > self.storage.commitIndex:
+            index = min(len(self.storage.logs), prefixLen+len(suffix)) - 1
+            if self.storage.logs[index].term != suffix[index-prefixLen].term:
+                self.storage.logs = self.storage.logs[:prefixLen-1]
+            if prefixLen + len(suffix) > len(self.storage.logs):
+                self.storage.logs += suffix[len(self.storage.logs)-prefixLen:]
+            if leaderCommit > self.storage.commitIndex:
+                for i in range(self.storage.commitIndex+1, min(leaderCommit, len(self.storage.logs))):
+                    self.storage.commitIndex = i
+                    self.apply_log(i)
+                    
+                    
+    def apply_log(self, index):
+        log = self.storage.logs[index]
+        if log.type == 'SET':
+            self.storage.state[log.key] = log.value
+        self.storage.write_to_dump(f"Node {self.node_id} committed the entry {log} to the state machine")        
 
     def become_leader(self):
         self.role = 'leader'
