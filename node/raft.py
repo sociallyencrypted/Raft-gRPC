@@ -226,13 +226,18 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                 self.storage.append_log("SET", self.currentTerm, key, value)
                 for node in self.node_addresses:
                     if node != f'localhost:{50050 + self.node_id}':
-                        self.replicate_log(node, key, value)
+                        self.replicate_log(node)
                 return raft_pb2.ServeClientReply(success=True) # Return "OK" to the client
         else:
             if self.leaderId:
                 return raft_pb2.ServeClientReply(leaderId=self.leaderId) # Return the leaderId to the client
             else:
                 return raft_pb2.ServeClientReply(leaderId="NONE") # Return "NONE" if there is no leader
+            
+    def replicate_log(self, node):
+        # to be done
+        pass
+        
             
 
 # if __name__ == "__main__":
