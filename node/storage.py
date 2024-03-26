@@ -12,6 +12,7 @@ class Storage:
     def write_to_dump(self, statement):
         f = open(f'{self.folder_location}/dump.txt', 'a')
         f.write(statement)
+        f.write('\n')
         f.close()
 
     def append_log(self, type, term, key=None, value=None):
@@ -26,6 +27,8 @@ class Storage:
         f.close()
         
     def load_state(self):
+        if not os.path.exists(self.folder_location):
+            os.makedirs(self.folder_location)
         if not os.path.exists(f'{self.folder_location}/logs.txt'):
             f = open(f'{self.folder_location}/logs.txt', 'w')
             f.close()

@@ -69,8 +69,8 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
     def get_last_log_info(self):
         if self.storage.logs:
             last_log = self.storage.logs[-1]
-            parts = last_log.strip().split(':')
-            last_log_term = int(parts[0])
+            parts = last_log.split(" ")
+            last_log_term = int(parts[-1])
             last_log_index = len(self.storage.logs) - 1
             return last_log_index, last_log_term
         else:
