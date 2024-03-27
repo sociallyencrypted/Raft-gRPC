@@ -6,6 +6,7 @@ class Storage:
         self.folder_location = f'logs_node_{self.node_id}'
         self.logs = []
         self.metadata = {}
+        self.commitIndex = 0
         self.state = {}
         self.load_state()
         

@@ -123,7 +123,10 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                 )
                 
             # Reply with failure if log doesn't contain an entry at prevLogIndex whose term matches prevLogTerm
-            if len(self.storage.logs) < request.prevLogIndex or self.storage.logs[request.prevLogIndex].term != request.prevLogTerm:
+            prevTerm = 0
+            if len(self.storage.logs) > 0:
+                prevTerm = self.storage.logs[-1].split(" ")[-1]
+            if len(self.storage.logs) < request.prevLogIndex or prevTerm != request.prevLogTerm:
                 self.print_and_dump(f"Node {self.node_id} rejected AppendEntries request from leader {request.leaderId}.")
                 return raft_pb2.AppendEntriesReply(
                     term=self.currentTerm,
@@ -186,14 +189,18 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
     def send_heartbeat(self):
         if self.role != 'leader':
             return
-        print(f"Leader Node {self.node_id} sending heartbeat to followers")
-        self.reacquire_lease()
-        for address in self.node_addresses:
-            # try to get acks from majority of nodes. if fail, step down as leader: TO BE DONE
-            total_acks = 0
-            prevLogIndex = len(self.storage.logs) - 1
-            prevLog = self.storage.logs[prevLogIndex].split(" ")
+        self.print_and_dump(f"Leader {self.node_id} sending heartbeat & Renewing Lease")
+        
+        # try to get acks from majority of nodes. if fail, step down as leader: TO BE DONE
+        total_acks = 0
+        prevLogIndex = len(self.storage.logs) - 1
+        if prevLogIndex >= 0:
+            prevLog = self.storage.logs[-1].split(" ")
             prevLogTerm = int(prevLog[-1])
+        else:
+            prevLogTerm = 0
+            prevLogIndex = 0
+        for address in self.node_addresses:
             if address != f'localhost:{50050 + self.node_id}':
                 try:
                     channel = grpc.insecure_channel(address)
@@ -211,12 +218,14 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                 except Exception as e:
                     print(f"Failed to send heartbeat to {address}: {e}")
                     
-            if total_acks <= len(self.node_addresses) // 2:
-                print(f"Failed to get majority acks from followers. Total acks: {total_acks}")
-                self.role = 'follower'
-                self.leaderId = None
-                self.initiate_election()
-                return
+        if total_acks < len(self.node_addresses) // 2:
+            print(f"Failed to get majority acks from followers. Total acks: {total_acks}")
+            self.role = 'follower'
+            self.leaderId = None
+            self.initiate_election()
+            return
+            
+        self.reacquire_lease()
 
         # Reschedule the heartbeat
         self.heartbeat_timer = threading.Timer(1, self.send_heartbeat)
@@ -228,6 +237,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
             self.leaseTimer.cancel()
         self.leaseTimer = threading.Timer(LEASE_DURATION, self.reacquire_lease)
         self.leaseTimer.start()
+        self.storage.append_log("NO-OP", self.currentTerm)
 
 
     def ServeClient(self, request, context):
