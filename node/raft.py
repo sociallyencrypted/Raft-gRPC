@@ -191,6 +191,9 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         for address in self.node_addresses:
             # try to get acks from majority of nodes. if fail, step down as leader: TO BE DONE
             total_acks = 0
+            prevLogIndex = len(self.storage.logs) - 1
+            prevLog = self.storage.logs[prevLogIndex].split(" ")
+            prevLogTerm = int(prevLog[-1])
             if address != f'localhost:{50050 + self.node_id}':
                 try:
                     channel = grpc.insecure_channel(address)
@@ -198,8 +201,8 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                     stub.AppendEntries(raft_pb2.AppendEntriesRequest(
                         term=self.currentTerm,
                         leaderId=self.node_id,
-                        prevLogIndex=0,
-                        prevLogTerm=0,
+                        prevLogIndex=prevLogIndex,
+                        prevLogTerm=prevLogTerm,
                         entries=[],
                         leaderCommit=0,
                         leaseDuration = LEASE_DURATION
@@ -208,10 +211,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                 except Exception as e:
                     print(f"Failed to send heartbeat to {address}: {e}")
                     
-            if total_acks > len(self.node_addresses) // 2:
-                self.become_leader()
-                return
-            else:
+            if total_acks <= len(self.node_addresses) // 2:
                 print(f"Failed to get majority acks from followers. Total acks: {total_acks}")
                 self.role = 'follower'
                 self.leaderId = None
@@ -266,8 +266,18 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                 return raft_pb2.ServeClientReply(leaderId="NONE") # Return "NONE" if there is no leader
             
     def replicate_log(self, node):
-        # to be done
-        pass
+        # to be done. for now, send an empty heartbeat
+        channel = grpc.insecure_channel(node)
+        stub = raft_pb2_grpc.RaftNodeStub(channel)
+        stub.AppendEntries(raft_pb2.AppendEntriesRequest(
+            term=self.currentTerm,
+            leaderId=self.node_id,
+            prevLogIndex=0,
+            prevLogTerm=0,
+            entries=[],
+            leaderCommit=0,
+            leaseDuration = LEASE_DURATION
+        ))
         
             
 
