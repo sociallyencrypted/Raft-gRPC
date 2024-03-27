@@ -112,31 +112,35 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
 
     def AppendEntries(self, request, context):
         with self.vote_count_lock:
-            if request.term < self.currentTerm:
-                # Reply with failure if the term is outdated
-                self.print_and_dump(f"Node {self.node_id} rejected AppendEntries request from leader {request.leaderId}.")
-                return raft_pb2.AppendEntriesReply(
-                    term=self.currentTerm,
-                    success=False,
-                    conflictingTerm=0,
-                    conflictingIndex=0
-                )
+            
+            #### CAUTION: NEEDS TO BE FIXED ####
+            
+            # if request.term < self.currentTerm:
+            #     # Reply with failure if the term is outdated
+            #     self.print_and_dump(f"Node {self.node_id} rejected AppendEntries request from leader {request.leaderId}.")
+            #     return raft_pb2.AppendEntriesReply(
+            #         term=self.currentTerm,
+            #         success=False,
+            #         conflictingTerm=0,
+            #         conflictingIndex=0
+            #     )
                 
             # Reply with failure if log doesn't contain an entry at prevLogIndex whose term matches prevLogTerm
-            prevTerm = 0
-            if len(self.storage.logs) > 0:
-                prevTerm = self.storage.logs[-1].split(" ")[-1]
-            if len(self.storage.logs) < request.prevLogIndex or prevTerm != request.prevLogTerm:
-                self.print_and_dump(f"Node {self.node_id} rejected AppendEntries request from leader {request.leaderId}.")
-                return raft_pb2.AppendEntriesReply(
-                    term=self.currentTerm,
-                    success=False,
-                    conflictingTerm=0,
-                    conflictingIndex=0
-                )
+            # prevTerm = 0
+            # if len(self.storage.logs) > 0:
+            #     prevTerm = self.storage.logs[-1].split(" ")[-1]
+            # if len(self.storage.logs) < request.prevLogIndex or prevTerm != request.prevLogTerm:
+            #     self.print_and_dump(f"Node {self.node_id} rejected AppendEntries request from leader {request.leaderId}.")
+            #     return raft_pb2.AppendEntriesReply(
+            #         term=self.currentTerm,
+            #         success=False,
+            #         conflictingTerm=0,
+            #         conflictingIndex=0
+            #     )
                 
             # Append the entries to the log
             self.update_follower_logs(request.prevLogIndex, request.leaderCommit, request.entries)
+            print(f"entries: {request.entries}")
             self.print_and_dump(f"Node {self.node_id} accepted AppendEntries request from leader {request.leaderId}.")
             # Reset the election timer on receiving the heartbeat
             self.reset_election_timer()
@@ -149,17 +153,22 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                 conflictingIndex=0
             )
             
-    def update_follower_logs(self, prefixLen, leaderCommit, suffix):
-        if len(suffix) > 0 or leaderCommit > self.storage.commitIndex:
-            index = min(len(self.storage.logs), prefixLen+len(suffix)) - 1
-            if self.storage.logs[index].term != suffix[index-prefixLen].term:
-                self.storage.logs = self.storage.logs[:prefixLen-1]
-            if prefixLen + len(suffix) > len(self.storage.logs):
-                self.storage.logs += suffix[len(self.storage.logs)-prefixLen:]
-            if leaderCommit > self.storage.commitIndex:
-                for i in range(self.storage.commitIndex+1, min(leaderCommit, len(self.storage.logs))):
-                    self.storage.commitIndex = i
-                    self.apply_log(i)
+    def update_follower_logs(self, prevLogIndex, leaderCommit, entries):
+        # to be done. for now, just append the entries
+        own_prev_log_index = len(self.storage.logs) - 1
+        entries = entries[own_prev_log_index + 1:]
+        for entry in entries:
+            if entry.operation == "NO-OP":
+                self.storage.append_log(entry.operation, entry.term)
+            else:
+                key = entry.operation.split(" ")[1]
+                value = entry.operation.split(" ")[2]
+                self.storage.append_log("SET", entry.term, key, value)
+        if leaderCommit == 1:
+            for i in range(own_prev_log_index + 1, len(self.storage.logs)):
+                self.apply_log(i)
+        
+        
                     
                     
     def apply_log(self, index):
@@ -193,30 +202,10 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         
         # try to get acks from majority of nodes. if fail, step down as leader: TO BE DONE
         total_acks = 0
-        prevLogIndex = len(self.storage.logs) - 1
-        if prevLogIndex >= 0:
-            prevLog = self.storage.logs[-1].split(" ")
-            prevLogTerm = int(prevLog[-1])
-        else:
-            prevLogTerm = 0
-            prevLogIndex = 0
         for address in self.node_addresses:
             if address != f'localhost:{50050 + self.node_id}':
-                try:
-                    channel = grpc.insecure_channel(address)
-                    stub = raft_pb2_grpc.RaftNodeStub(channel)
-                    stub.AppendEntries(raft_pb2.AppendEntriesRequest(
-                        term=self.currentTerm,
-                        leaderId=self.node_id,
-                        prevLogIndex=prevLogIndex,
-                        prevLogTerm=prevLogTerm,
-                        entries=[],
-                        leaderCommit=0,
-                        leaseDuration = LEASE_DURATION
-                    ))
-                    total_acks += 1
-                except Exception as e:
-                    print(f"Failed to send heartbeat to {address}: {e}")
+                self.replicate_log(address)
+                total_acks += 1
                     
         if total_acks < len(self.node_addresses) // 2:
             print(f"Failed to get majority acks from followers. Total acks: {total_acks}")
@@ -279,15 +268,22 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         # to be done. for now, send an empty heartbeat
         channel = grpc.insecure_channel(node)
         stub = raft_pb2_grpc.RaftNodeStub(channel)
-        stub.AppendEntries(raft_pb2.AppendEntriesRequest(
+        last_log_index, last_log_term = self.get_last_log_info()
+        entries = [raft_pb2.LogEntry(term=int(log.split(" ")[-1]), operation=" ".join(log.split(" ")[:-1])) for log in self.storage.logs]
+        response = stub.AppendEntries(raft_pb2.AppendEntriesRequest(
             term=self.currentTerm,
             leaderId=self.node_id,
             prevLogIndex=0,
             prevLogTerm=0,
-            entries=[],
+            entries=entries,
             leaderCommit=0,
             leaseDuration = LEASE_DURATION
         ))
+        
+        if response.success:
+            print(f"Log replicated to {node}")
+        else:
+            print(f"Failed to replicate log to {node}")
         
             
 
