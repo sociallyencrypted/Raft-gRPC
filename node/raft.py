@@ -130,23 +130,30 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
 
     def RequestVote(self, request, context):
         with self.vote_count_lock:
-            # If the term in the request is less than the current term, don't grant vote
             if request.term < self.currentTerm:
                 return raft_pb2.RequestVoteReply(term=self.currentTerm, voteGranted=False)
 
-            # If this node is already a candidate in the same term, don't grant vote
+            if request.term > self.currentTerm:
+                self.currentTerm = request.term
+                self.become_follower(request.candidateId)
+
+            # Additional check for split vote scenario
             if self.role == "candidate" and request.term == self.currentTerm:
                 return raft_pb2.RequestVoteReply(term=self.currentTerm, voteGranted=False)
 
-            # If the node has already voted for someone else or the log is not up-to-date, don't grant vote
-            if (self.votedFor is not None and self.votedFor != request.candidateId) or not self.is_log_up_to_date(request.lastLogIndex, request.lastLogTerm):
+            if (self.votedFor is None or self.votedFor == request.candidateId) and self.is_log_up_to_date(request.lastLogIndex, request.lastLogTerm):
+                self.votedFor = request.candidateId
+                self.reset_election_timer()
+                print(f"Node {self.node_id} granted vote to Node {request.candidateId} for term {self.currentTerm}")
+                return raft_pb2.RequestVoteReply(term=self.currentTerm, voteGranted=True)
+            else:
                 return raft_pb2.RequestVoteReply(term=self.currentTerm, voteGranted=False)
 
-            self.votedFor = request.candidateId
-            self.currentTerm = request.term
-            self.reset_election_timer()
-            print(f"Node {self.node_id} granted vote to Node {request.candidateId} for term {self.currentTerm}")
-            return raft_pb2.RequestVoteReply(term=self.currentTerm, voteGranted=True)
+    def become_follower(self, leader_id=None):
+        self.role = 'follower'
+        self.leaderId = leader_id
+        self.votedFor = None
+        self.restart_election_timer()
         
     def is_log_up_to_date(self, lastLogIndex, lastLogTerm):
         localLastLogIndex, localLastLogTerm = self.get_last_log_info()
