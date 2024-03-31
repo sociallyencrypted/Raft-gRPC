@@ -39,7 +39,9 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         self.print_and_dump(f"Node {self.node_id} election timer timed out, Starting election.")
         self.role = "candidate"
         self.currentTerm += 1
+        self.storage.update_metadata('currentTerm', self.currentTerm)
         self.votedFor = self.node_id  # Node votes for itself
+        self.storage.update_metadata('votedFor', self.node_id)
         self.request_votes_from_peers()
 
     def request_votes_from_peers(self):
@@ -96,6 +98,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         self.role = 'follower'
         self.leaderId = ""
         self.votedFor = None
+        self.storage.update_metadata('votedFor', self.node_id)
         self.print_and_dump(f"{self.node_id} Stepping down")
         self.restart_election_timer()
 
@@ -138,6 +141,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
 
             if request.term > self.currentTerm:
                 self.currentTerm = request.term
+                self.storage.update_metadata('currentTerm', self.currentTerm)
                 self.become_follower(request.candidateId)
 
             # Additional check for split vote scenario
@@ -146,6 +150,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
 
             if (self.votedFor is None or self.votedFor == request.candidateId) and self.is_log_up_to_date(request.lastLogIndex, request.lastLogTerm):
                 self.votedFor = request.candidateId
+                self.storage.update_metadata('votedFor', self.node_id)
                 self.reset_election_timer()
                 self.print_and_dump(f"Vote granted for Node {request.candidateId} in term {self.currentTerm}")
                 return raft_pb2.RequestVoteReply(term=self.currentTerm, voteGranted=True)
@@ -157,6 +162,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         self.role = 'follower'
         self.leaderId = leader_id
         self.votedFor = None
+        self.storage.update_metadata('votedFor', self.node_id)
         self.restart_election_timer()
         
     def is_log_up_to_date(self, lastLogIndex, lastLogTerm):
@@ -184,7 +190,9 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
             
             if request.term > self.currentTerm:
                 self.currentTerm = request.term
+                self.storage.update_metadata('currentTerm', self.currentTerm)
                 self.votedFor = None
+                self.storage.update_metadata('votedFor', None)
             
             self.role = "follower"
             print(f"Node {self.node_id} received AppendEntries request from leader {request.leaderId}")
@@ -229,6 +237,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                 value = entry.operation.split(" ")[2]
                 self.storage.append_log("SET", entry.term, key, value)
         self.commitIndex= max(self.commitIndex, min(leaderCommit, prevLogIndex + len(entries)))
+        self.storage.update_metadata('commitIndex', self.commitIndex)
         # commit entries upto commitIndex
         for i in range(prevLogIndex+i+1, self.commitIndex+1):
             self.apply_log(i)  
@@ -286,6 +295,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         for i in range(self.commitIndex+1, len(self.storage.logs)):
             self.apply_log(i)
         self.commitIndex = len(self.storage.logs) - 1
+        self.storage.update_metadata('commitIndex', self.commitIndex)
 
         # Reschedule the heartbeat
         self.heartbeat_timer = threading.Timer(1, self.send_heartbeat)
@@ -375,6 +385,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                     return True
                 if prevIndex + len(entries) < len(self.storage.logs) - 1 and self.commitIndex < prevIndex + len(entries) and int(self.storage.logs[prevIndex + len(entries)].split(" ")[-1]) == self.currentTerm:
                     self.commitIndex = prevIndex + len(entries)
+                    self.storage.update_metadata('commitIndex', self.commitIndex)
                     self.storage.write_to_dump(f"Node {self.node_id} successfully replicated log to {node}")
                     
             else:
@@ -383,6 +394,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                 conflictingTerm = response.conflictingTerm
                 if conflictingTerm > self.currentTerm:
                     self.currentTerm = conflictingTerm
+                    self.storage.update_metadata('currentTerm', self.currentTerm)
                     self.become_follower()
                 else:
                     self.nextIndex[node_id] = max(1, min(conflictingIndex, self.nextIndex[node_id] - 1))

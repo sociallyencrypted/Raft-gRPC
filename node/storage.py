@@ -5,7 +5,11 @@ class Storage:
         self.node_id = node_id
         self.folder_location = f'logs_node_{self.node_id}'
         self.logs = []
-        self.metadata = {}
+        self.metadata = {
+            'currentTerm': 0,
+            'votedFor': None,
+            'commitIndex': 0,
+        }
         self.commitIndex = 0
         self.state = {}
         self.load_state()
@@ -53,3 +57,11 @@ class Storage:
             return self.state[key]
         else:
             return None
+        
+    def update_metadata(self, key, value):
+        self.metadata[key] = value
+        f = open(f'{self.folder_location}/metadata.txt', 'w')
+        for key, value in self.metadata.items():
+            f.write(f'{key}:{value}')
+            f.write('\n')
+        f.close()
