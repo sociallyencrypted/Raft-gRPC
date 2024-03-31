@@ -28,11 +28,11 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         self.matchIndex = {}
         self.commitIndex = 0
         if self.storage.metadata['currentTerm'] is not None:
-            self.currentTerm = self.storage.metadata['currentTerm']
+            self.currentTerm = int(self.storage.metadata['currentTerm'])
         if self.storage.metadata['votedFor'] is not None:
-            self.votedFor = self.storage.metadata['votedFor']
+            self.votedFor = int(self.storage.metadata['votedFor'])
         if self.storage.metadata['commitIndex'] is not None:
-            self.commitIndex = self.storage.metadata['commitIndex']
+            self.commitIndex = int(self.storage.metadata['commitIndex'])
 
 
     def start_election_timeout(self):
