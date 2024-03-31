@@ -36,10 +36,10 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
     def initiate_election(self):
         if self.role == 'leader':  # Prevent initiating election if already a leader
             return
+        self.print_and_dump(f"Node {self.node_id} election timer timed out, Starting election.")
         self.role = "candidate"
         self.currentTerm += 1
         self.votedFor = self.node_id  # Node votes for itself
-        print(f"Node {self.node_id} becoming candidate for term {self.currentTerm}")
         self.request_votes_from_peers()
 
     def request_votes_from_peers(self):
@@ -96,7 +96,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         self.role = 'follower'
         self.leaderId = ""
         self.votedFor = None
-        self.print_and_dump(f"Node {self.node_id} reverting to follower role")
+        self.print_and_dump(f"{self.node_id} Stepping down")
         self.restart_election_timer()
 
     def handle_vote_response(self, response):
@@ -147,9 +147,10 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
             if (self.votedFor is None or self.votedFor == request.candidateId) and self.is_log_up_to_date(request.lastLogIndex, request.lastLogTerm):
                 self.votedFor = request.candidateId
                 self.reset_election_timer()
-                print(f"Node {self.node_id} granted vote to Node {request.candidateId} for term {self.currentTerm}")
+                self.print_and_dump(f"Vote granted for Node {request.candidateId} in term {self.currentTerm}")
                 return raft_pb2.RequestVoteReply(term=self.currentTerm, voteGranted=True)
             else:
+                self.print_and_dump(f"Vote denied for Node {request.candidateId} in term {self.currentTerm}")
                 return raft_pb2.RequestVoteReply(term=self.currentTerm, voteGranted=False)
 
     def become_follower(self, leader_id=None):
@@ -193,10 +194,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                 self.update_follower_logs(request.prevLogIndex, request.leaderCommit, request.entries)
                 self.print_and_dump(f"Node {self.node_id} accepted AppendEntries request from leader {request.leaderId}.")
                 self.reset_election_timer()
-                return raft_pb2.AppendEntriesReply(term=self.currentTerm, success=True)    
-            
-            print(f"PrevLogIndex: {request.prevLogIndex}, PrevLogTerm: {request.prevLogTerm}")
-            print(f"Self.PrevLogIndex: {len(self.storage.logs)-1}, Self.PrevLogTerm: {int(self.storage.logs[-1].split(' ')[-1])}")       
+                return raft_pb2.AppendEntriesReply(term=self.currentTerm, success=True)       
             
             if request.prevLogIndex > (len(self.storage.logs)-1) or int(self.storage.logs[request.prevLogIndex].split(" ")[-1]) != request.prevLogTerm:
                 conflictingIndex = min(request.prevLogIndex, len(self.storage.logs)-1)
@@ -241,11 +239,13 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         log_type = log[0]
         if log_type == 'SET':
             self.storage.state[log[1]] = log[2]
-        self.storage.write_to_dump(f"Node {self.node_id} committed the entry {log} to the state machine")        
+        self.storage.write_to_dump(f"Node {self.node_id} ({self.role}) committed the entry {log} to the state machine")        
 
     def become_leader(self):
         self.role = 'leader'
         self.leaderId = self.node_id
+        self.print_and_dump("New Leader waiting for Old Leader Lease to timeout.")
+        # TODO: wait till old leader lease expires
         self.print_and_dump(f"Node {self.node_id} became the leader for term {self.currentTerm}")
         # Cancel the election timer as this node is now the leader
         if self.electionTimer is not None:
@@ -275,7 +275,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                     total_acks += 1
 
         if total_acks <= (len(self.node_addresses)-1) // 2:
-            print(f"Failed to get majority acks from followers. Total acks: {total_acks}")
+            self.print_and_dump(f"Leader {self.node_id} lease renewal failed. Stepping Down.")
             self.role = 'follower'
             self.leaderId = None
             self.restart_election_timer()
@@ -301,6 +301,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
 
 
     def ServeClient(self, request, context):
+        self.print_and_dump(f"Node {self.node_id} (leader) received a {request.request} request.")
         request = request.request.split(" ")
         if request[0] == "GET":
             if self.role == "leader":
@@ -336,10 +337,10 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                 return raft_pb2.ServeClientReply(leaderId="NONE") # Return "NONE" if there is no leader
             
     def replicate_log(self, node):
+        node_id = int(node.split(":")[-1]) - 50050
         try:
             channel = grpc.insecure_channel(node)
             stub = raft_pb2_grpc.RaftNodeStub(channel)
-            node_id = int(node.split(":")[-1]) - 50050
             if node_id not in self.nextIndex:
                 self.nextIndex[node_id] = 0
             prevIndex = self.nextIndex[node_id] - 1
@@ -368,7 +369,6 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
             if response.success:
                 if prevIndex + len(entries) >= self.nextIndex[node_id]:
                     self.nextIndex[node_id] = prevIndex + len(entries) + 1
-                    print(f" Updated nextIndex for node {node_id} to {self.nextIndex[node_id]}")
                     self.matchIndex[node_id] = prevIndex + len(entries)
                     if len(entries) > 0:
                         self.storage.write_to_dump(f"Node {self.node_id} successfully replicated log to {node}")
@@ -386,10 +386,9 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                     self.become_follower()
                 else:
                     self.nextIndex[node_id] = max(1, min(conflictingIndex, self.nextIndex[node_id] - 1))
-                    print(f" Updated nextIndex for node {node_id} to {self.nextIndex[node_id]}")
                 return False
         except grpc.RpcError as e:
-            # print(f"Failed to connect to {node}, error: {e}")
+            self.print_and_dump(f"Error occurred while sending RPC to Node {node_id}")
             if e.code() == grpc.StatusCode.UNAVAILABLE:
                 print("Error: Service unavailable. Check server status")
             elif e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
