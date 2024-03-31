@@ -272,7 +272,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                 if ack_success:
                     total_acks += 1
 
-        if total_acks <= len(self.node_addresses) // 2:
+        if total_acks <= (len(self.node_addresses)-1) // 2:
             print(f"Failed to get majority acks from followers. Total acks: {total_acks}")
             self.role = 'follower'
             self.leaderId = None
