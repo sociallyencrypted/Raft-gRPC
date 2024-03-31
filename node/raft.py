@@ -232,11 +232,9 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                 value = entry.operation.split(" ")[2]
                 self.storage.append_log("SET", entry.term, key, value)
         self.commitIndex= max(self.commitIndex, min(leaderCommit, prevLogIndex + len(entries)))
-        # fo       r i in range(self.commitIndex, len(self.storage.logs)):
-        #     self.apply_log(i)
-        
-        
-                    
+        # commit entries upto commitIndex
+        for i in range(prevLogIndex+i+1, self.commitIndex+1):
+            self.apply_log(i)  
                     
     def apply_log(self, index):
         log = self.storage.logs[index]
