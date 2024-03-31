@@ -207,7 +207,6 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
             
             # Append the entries to the log
             self.update_follower_logs(request.prevLogIndex, request.leaderCommit, request.entries)
-            print(f"entries: {request.entries}")
             self.print_and_dump(f"Node {self.node_id} accepted AppendEntries request from leader {request.leaderId}.")
             # Reset the election timer on receiving the heartbeat
             self.reset_election_timer()
@@ -238,8 +237,10 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                     
     def apply_log(self, index):
         log = self.storage.logs[index]
-        if log.type == 'SET':
-            self.storage.state[log.key] = log.value
+        log = log.split(" ")
+        log_type = log[0]
+        if log_type == 'SET':
+            self.storage.state[log[1]] = log[2]
         self.storage.write_to_dump(f"Node {self.node_id} committed the entry {log} to the state machine")        
 
     def become_leader(self):
@@ -281,6 +282,10 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
             return
 
         self.reacquire_lease()
+        # commit all entries till now
+        for i in range(self.commitIndex+1, len(self.storage.logs)):
+            self.apply_log(i)
+        self.commitIndex = len(self.storage.logs) - 1
 
         # Reschedule the heartbeat
         self.heartbeat_timer = threading.Timer(1, self.send_heartbeat)
