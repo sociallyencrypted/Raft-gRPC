@@ -24,6 +24,8 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         self.vote_count = 1
         self.vote_count_lock = Lock()
         self.leaseTimer = None
+        self.nextIndex = {}
+        self.matchIndex = {}
 
 
     def start_election_timeout(self):
@@ -113,31 +115,37 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
     def AppendEntries(self, request, context):
         with self.vote_count_lock:
             
-            #### CAUTION: NEEDS TO BE FIXED ####
+            if self.currentTerm > request.term:
+                return raft_pb2.AppendEntriesReply(term=self.currentTerm, success=False)
             
-            # if request.term < self.currentTerm:
-            #     # Reply with failure if the term is outdated
-            #     self.print_and_dump(f"Node {self.node_id} rejected AppendEntries request from leader {request.leaderId}.")
-            #     return raft_pb2.AppendEntriesReply(
-            #         term=self.currentTerm,
-            #         success=False,
-            #         conflictingTerm=0,
-            #         conflictingIndex=0
-            #     )
-                
-            # Reply with failure if log doesn't contain an entry at prevLogIndex whose term matches prevLogTerm
-            # prevTerm = 0
-            # if len(self.storage.logs) > 0:
-            #     prevTerm = self.storage.logs[-1].split(" ")[-1]
-            # if len(self.storage.logs) < request.prevLogIndex or prevTerm != request.prevLogTerm:
-            #     self.print_and_dump(f"Node {self.node_id} rejected AppendEntries request from leader {request.leaderId}.")
-            #     return raft_pb2.AppendEntriesReply(
-            #         term=self.currentTerm,
-            #         success=False,
-            #         conflictingTerm=0,
-            #         conflictingIndex=0
-            #     )
-                
+            self.leaderId = request.leaderId
+            
+            self.reset_election_timer()
+            
+            if request.term > self.currentTerm:
+                self.currentTerm = request.term
+                self.votedFor = None
+            
+            self.role = "follower"
+            print(f"Node {self.node_id} received AppendEntries request from leader {request.leaderId}")
+            
+            if len(self.storage.logs) == 0:
+                # accept request
+                self.update_follower_logs(request.prevLogIndex, request.leaderCommit, request.entries)
+                self.print_and_dump(f"Node {self.node_id} accepted AppendEntries request from leader {request.leaderId}.")
+                self.reset_election_timer()
+                return raft_pb2.AppendEntriesReply(term=self.currentTerm, success=True)    
+            
+            print(f"PrevLogIndex: {request.prevLogIndex}, PrevLogTerm: {request.prevLogTerm}")
+            print(f"Self.PrevLogIndex: {len(self.storage.logs)-1}, Self.PrevLogTerm: {int(self.storage.logs[-1].split(' ')[-1])}")       
+            
+            if request.prevLogIndex > (len(self.storage.logs)-1) or int(self.storage.logs[request.prevLogIndex].split(" ")[-1]) != request.prevLogTerm:
+                conflictingIndex = min(request.prevLogIndex, len(self.storage.logs)-1)
+                conflictingTerm = int(self.storage.logs[conflictingIndex].split(" ")[-1])
+                while conflictingIndex > 0 and int(self.storage.logs[conflictingIndex].split(" ")[-1]) == conflictingTerm:
+                    conflictingIndex -= 1
+                return raft_pb2.AppendEntriesReply(term=self.currentTerm, success=False, conflictingIndex=conflictingIndex, conflictingTerm=conflictingTerm)
+            
             # Append the entries to the log
             self.update_follower_logs(request.prevLogIndex, request.leaderCommit, request.entries)
             print(f"entries: {request.entries}")
@@ -149,10 +157,8 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
             return raft_pb2.AppendEntriesReply(
                 term=self.currentTerm,
                 success=True,
-                conflictingTerm=0,
-                conflictingIndex=0
             )
-            
+        
     def update_follower_logs(self, prevLogIndex, leaderCommit, entries):
         # to be done. for now, just append the entries
         own_prev_log_index = len(self.storage.logs) - 1
@@ -268,22 +274,47 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         # to be done. for now, send an empty heartbeat
         channel = grpc.insecure_channel(node)
         stub = raft_pb2_grpc.RaftNodeStub(channel)
-        last_log_index, last_log_term = self.get_last_log_info()
-        entries = [raft_pb2.LogEntry(term=int(log.split(" ")[-1]), operation=" ".join(log.split(" ")[:-1])) for log in self.storage.logs]
-        response = stub.AppendEntries(raft_pb2.AppendEntriesRequest(
-            term=self.currentTerm,
-            leaderId=self.node_id,
-            prevLogIndex=0,
-            prevLogTerm=0,
-            entries=entries,
-            leaderCommit=0,
-            leaseDuration = LEASE_DURATION
-        ))
-        
-        if response.success:
-            print(f"Log replicated to {node}")
+        node_id = int(node.split(":")[-1]) - 50050
+        if node_id not in self.nextIndex:
+            self.nextIndex[node_id] = 0
+        prevIndex = self.nextIndex[node_id] - 1
+        if prevIndex < 0:
+            prevTerm = 0
         else:
-            print(f"Failed to replicate log to {node}")
+            prevTerm = int(self.storage.logs[prevIndex].split(" ")[-1])
+        # entries i self.storage.logs[prevIndex+1:]
+        entries = []
+        for i in range(prevIndex+1, len(self.storage.logs)):
+            op = " ".join(self.storage.logs[i].split(" ")[:-1])
+            trm = int(self.storage.logs[i].split(" ")[-1])
+            entry = raft_pb2.LogEntry(operation=op, term=trm)
+            entries.append(entry)
+        try:
+            response = stub.AppendEntries(raft_pb2.AppendEntriesRequest(
+                term=self.currentTerm,
+                leaderId=self.node_id,
+                prevLogIndex=prevIndex,
+                prevLogTerm=prevTerm,
+                entries=entries,
+                leaderCommit=0,
+                leaseDuration = LEASE_DURATION
+            ))
+            
+            
+            if response.success:
+                if prevIndex + len(entries) >= self.nextIndex[node_id]:
+                    self.nextIndex[node_id] = prevIndex + len(entries) + 1
+                    print(f" Updated nextIndex for node {node_id} to {self.nextIndex[node_id]}")
+                    self.matchIndex[node_id] = prevIndex + len(entries)
+                    if len(entries) > 0:
+                        self.storage.write_to_dump(f"Node {self.node_id} successfully replicated log to {node}")
+            else:
+                print(f"Failed to replicate log to {node}")
+                if self.nextIndex[node_id] > 0:
+                    self.nextIndex[node_id] -= 1
+                print(f" Updated nextIndex for node {node_id} to {self.nextIndex[node_id]}")
+        except Exception as e:
+            print(f"Failed to replicate log to {node}. Error: {e}")
         
             
 
