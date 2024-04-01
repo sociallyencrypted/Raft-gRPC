@@ -245,7 +245,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         self.commitIndex= max(self.commitIndex, min(leaderCommit, prevLogIndex + len(entries)))
         self.storage.update_metadata('commitIndex', self.commitIndex)
         # commit entries upto commitIndex
-        for i in range(prevLogIndex+i+1, self.commitIndex+1):
+        for i in range(prevLogIndex+1, self.commitIndex+1):
             self.apply_log(i)  
                     
     def apply_log(self, index):
@@ -254,7 +254,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         log_type = log[0]
         if log_type == 'SET':
             self.storage.state[log[1]] = log[2]
-        self.storage.write_to_dump(f"Node {self.node_id} ({self.role}) committed the entry {log} to the state machine")        
+        self.print_and_dump(f"Node {self.node_id} ({self.role}) committed the entry {log} to the state machine")        
 
     def become_leader(self):
         self.role = 'leader'
@@ -387,12 +387,12 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                     self.nextIndex[node_id] = prevIndex + len(entries) + 1
                     self.matchIndex[node_id] = prevIndex + len(entries)
                     if len(entries) > 0:
-                        self.storage.write_to_dump(f"Node {self.node_id} successfully replicated log to {node}")
+                        self.print_and_dump(f"Node {self.node_id} successfully replicated log to {node}")
                     return True
                 if prevIndex + len(entries) < len(self.storage.logs) - 1 and self.commitIndex < prevIndex + len(entries) and int(self.storage.logs[prevIndex + len(entries)].split(" ")[-1]) == self.currentTerm:
                     self.commitIndex = prevIndex + len(entries)
                     self.storage.update_metadata('commitIndex', self.commitIndex)
-                    self.storage.write_to_dump(f"Node {self.node_id} successfully replicated log to {node}")
+                    self.print_and_dump(f"Node {self.node_id} successfully replicated log to {node}")
                     
             else:
                 print(f"Node {self.node_id} failed to replicate log to {node}")
@@ -411,5 +411,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                 print("Error: Service unavailable. Check server status")
             elif e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
                 print("Error: Deadline exceeded. Retry")
+            else:
+                print("Error:", e.details())
             return False
 
