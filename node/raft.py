@@ -231,6 +231,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         
     def update_follower_logs(self, prevLogIndex, leaderCommit, entries):
         for i in range(len(entries)):
+            print(f"DEBUG: prevLogIndex: {prevLogIndex}, i: {i}, lenth of logs: {len(self.storage.logs)}")
             if prevLogIndex + i + 1 >= len(self.storage.logs)-1:
                 break
             if self.storage.logs[prevLogIndex + i+1].split(" ")[-1] != entries[i].term:
@@ -246,6 +247,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         self.storage.update_metadata('commitIndex', self.commitIndex)
         # commit entries upto commitIndex
         for i in range(prevLogIndex+1, self.commitIndex+1):
+            print(f"DEBUG: COMMITTING LOG {i}")
             self.apply_log(i)  
                     
     def apply_log(self, index):
@@ -266,6 +268,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         if self.electionTimer is not None:
             self.electionTimer.cancel()
         # Start the heartbeat process
+        self.reacquire_lease()
         self.start_heartbeat()
         
     def print_and_dump(self, statement):
