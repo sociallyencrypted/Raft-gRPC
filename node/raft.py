@@ -156,7 +156,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
 
             if (self.votedFor is None or self.votedFor == request.candidateId) and self.is_log_up_to_date(request.lastLogIndex, request.lastLogTerm):
                 self.votedFor = request.candidateId
-                self.storage.update_metadata('votedFor', self.node_id)
+                self.storage.update_metadata('votedFor', self.votedFor)  # Corrected this line
                 self.reset_election_timer()
                 self.print_and_dump(f"Vote granted for Node {request.candidateId} in term {self.currentTerm}")
                 return raft_pb2.RequestVoteReply(term=self.currentTerm, voteGranted=True)
