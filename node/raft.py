@@ -33,7 +33,25 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
             self.votedFor = int(self.storage.metadata['votedFor'])
         if self.storage.metadata['commitIndex'] is not None:
             self.commitIndex = int(self.storage.metadata['commitIndex'])
+        self.commit_log_entries()
 
+    def commit_log_entries(self):
+        for index in range(len(self.storage.logs)):
+            if index <= self.commitIndex:
+                self.apply_log(index)
+
+    def apply_log(self, index):
+        if index < len(self.storage.logs):
+            log_entry = self.storage.logs[index]
+            parts = log_entry.split(" ")
+            log_type = parts[0]
+
+            if log_type == "SET":
+                key = parts[1]
+                value = parts[2]
+                # Apply the SET operation to the node's state
+                self.storage.state[key] = value
+                self.print_and_dump(f"Node {self.node_id} committed {log_type} {key}={value} to state")
 
     def start_election_timeout(self):
         self.electionTimer = Timer(random.uniform(5, 10), self.initiate_election)
