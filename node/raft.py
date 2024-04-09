@@ -352,6 +352,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                     context.set_details("Key not found")
                     # send back the context
                     return raft_pb2.ServeClientReply()
+                self.print_and_dump(f"Node {self.node_id} (leader) served GET request for key {key}")
                 return raft_pb2.ServeClientReply(data=value) # Return the value to the client
             else:
                 if self.leaderId:
