@@ -229,7 +229,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
             )
         
     def update_follower_logs(self, prevLogIndex, leaderCommit, entries):
-        print(f"DEBUG: prevLogIndex: {prevLogIndex}, i: {i}, lenth of logs: {len(self.storage.logs)}")azAZA
+        print(f"DEBUG: prevLogIndex: {prevLogIndex}, i: {i}, lenth of logs: {len(self.storage.logs)}")
         for i in range(len(entries)):
             if prevLogIndex + i + 1 >= len(self.storage.logs)-1:
                 break
