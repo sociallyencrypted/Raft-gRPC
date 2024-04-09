@@ -380,15 +380,14 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
             channel = grpc.insecure_channel(node)
             stub = raft_pb2_grpc.RaftNodeStub(channel)
             if node_id not in self.nextIndex:
-                self.nextIndex[node_id] = 0
+                self.nextIndex[node_id] = len(self.storage.logs)
             prevIndex = self.nextIndex[node_id] - 1
             if prevIndex < 0:
                 prevTerm = 0
             else:
                 prevTerm = int(self.storage.logs[prevIndex].split(" ")[-1])
-            # entries i self.storage.logs[prevIndex+1:]
             entries = []
-            for i in range(prevIndex+1, len(self.storage.logs)):
+            for i in range(self.nextIndex[node_id], len(self.storage.logs)):
                 op = " ".join(self.storage.logs[i].split(" ")[:-1])
                 trm = int(self.storage.logs[i].split(" ")[-1])
                 entry = raft_pb2.LogEntry(operation=op, term=trm)
@@ -400,22 +399,25 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                 prevLogTerm=prevTerm,
                 entries=entries,
                 leaderCommit=self.commitIndex,
-                leaseDuration = LEASE_DURATION
+                leaseDuration=LEASE_DURATION
             ))
-            
-            
+
             if response.success:
-                if prevIndex + len(entries) >= self.nextIndex[node_id]:
-                    self.nextIndex[node_id] = prevIndex + len(entries) + 1
-                    self.matchIndex[node_id] = prevIndex + len(entries)
-                    if len(entries) > 0:
-                        self.print_and_dump(f"Node {self.node_id} successfully replicated log to {node}")
-                    return True
+                self.nextIndex[node_id] = len(self.storage.logs)
+                self.matchIndex[node_id] = len(self.storage.logs) - 1
+                if len(entries) > 0:
+                    self.print_and_dump(f"Node {self.node_id} successfully replicated log to {node}")
+                
+                # Check if we can commit more entries
                 if prevIndex + len(entries) < len(self.storage.logs) - 1 and self.commitIndex < prevIndex + len(entries) and int(self.storage.logs[prevIndex + len(entries)].split(" ")[-1]) == self.currentTerm:
                     self.commitIndex = prevIndex + len(entries)
                     self.storage.update_metadata('commitIndex', self.commitIndex)
-                    self.print_and_dump(f"Node {self.node_id} successfully replicated log to {node}")
+                    self.print_and_dump(f"Node {self.node_id} successfully committed log to {node}")
                     
+                    # Commit the entries up to the new commitIndex
+                    for i in range(self.commitIndex - len(entries) + 1, self.commitIndex + 1):
+                        self.apply_log(i)
+                return True
             else:
                 print(f"Node {self.node_id} failed to replicate log to {node}")
                 conflictingIndex = response.conflictingIndex
