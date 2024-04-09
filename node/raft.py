@@ -230,8 +230,8 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
             )
         
     def update_follower_logs(self, prevLogIndex, leaderCommit, entries):
+        print(f"DEBUG: prevLogIndex: {prevLogIndex}, i: {i}, lenth of logs: {len(self.storage.logs)}")azAZA
         for i in range(len(entries)):
-            print(f"DEBUG: prevLogIndex: {prevLogIndex}, i: {i}, lenth of logs: {len(self.storage.logs)}")
             if prevLogIndex + i + 1 >= len(self.storage.logs)-1:
                 break
             if self.storage.logs[prevLogIndex + i+1].split(" ")[-1] != entries[i].term:
@@ -262,7 +262,9 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         self.role = 'leader'
         self.leaderId = self.node_id
         self.print_and_dump("New Leader waiting for Old Leader Lease to timeout.")
-        # TODO: wait till old leader lease expires
+        print(f"DEBUG: Time left: {self.leaseTimer.interval}")
+        # wait till lease timer expires
+        self.leaseTimer.finished.wait()
         self.print_and_dump(f"Node {self.node_id} became the leader for term {self.currentTerm}")
         # Cancel the election timer as this node is now the leader
         if self.electionTimer is not None:

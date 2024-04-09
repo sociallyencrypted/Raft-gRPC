@@ -48,8 +48,11 @@ class Storage:
             return
         f = open(f'{self.folder_location}/metadata.txt', 'r')
         for line in f:
-            key, value = line.split(':')
-            self.metadata[key] = value
+            key, value = line.strip().split(':')
+            if value == 'None':
+                value = None
+            else:
+                value = int(value)
         f.close()
         
     def get(self, key):
