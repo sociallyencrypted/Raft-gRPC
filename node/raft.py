@@ -185,41 +185,38 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
 
     def AppendEntries(self, request, context):
         with self.vote_count_lock:
-            
             if self.currentTerm > request.term:
                 return raft_pb2.AppendEntriesReply(term=self.currentTerm, success=False)
-            
+
             self.leaderId = request.leaderId
-            
             self.reset_election_timer()
-            
+
             if request.term > self.currentTerm:
                 self.currentTerm = request.term
                 self.storage.update_metadata('currentTerm', self.currentTerm)
                 self.votedFor = None
                 self.storage.update_metadata('votedFor', None)
-            
+
             self.role = "follower"
             print(f"Node {self.node_id} received AppendEntries request from leader {request.leaderId}")
-            
+
             if len(self.storage.logs) == 0:
                 # accept request
                 self.update_follower_logs(request.prevLogIndex, request.leaderCommit, request.entries)
                 self.print_and_dump(f"Node {self.node_id} accepted AppendEntries request from leader {request.leaderId}.")
                 self.reset_election_timer()
-                return raft_pb2.AppendEntriesReply(term=self.currentTerm, success=True)       
-            
-            if request.prevLogIndex > (len(self.storage.logs)-1) or int(self.storage.logs[request.prevLogIndex].split(" ")[-1]) != request.prevLogTerm:
-                conflictingIndex = min(request.prevLogIndex, len(self.storage.logs)-1)
+                return raft_pb2.AppendEntriesReply(term=self.currentTerm, success=True)
+
+            if request.prevLogIndex > (len(self.storage.logs) - 1) or int(self.storage.logs[request.prevLogIndex].split(" ")[-1]) != request.prevLogTerm:
+                conflictingIndex = min(request.prevLogIndex, len(self.storage.logs) - 1)
                 conflictingTerm = int(self.storage.logs[conflictingIndex].split(" ")[-1])
                 while conflictingIndex > self.commitIndex and int(self.storage.logs[conflictingIndex].split(" ")[-1]) == conflictingTerm:
                     conflictingIndex -= 1
-                return raft_pb2.AppendEntriesReply(term=self.currentTerm, success=False, conflictingIndex=max(self.commitIndex+1, conflictingIndex), conflictingTerm=conflictingTerm)
-            
+                return raft_pb2.AppendEntriesReply(term=self.currentTerm, success=False, conflictingIndex=max(self.commitIndex + 1, conflictingIndex), conflictingTerm=conflictingTerm)
+
             # Append the entries to the log
             self.update_follower_logs(request.prevLogIndex, request.leaderCommit, request.entries)
             self.print_and_dump(f"Node {self.node_id} accepted AppendEntries request from leader {request.leaderId}.")
-            # Reset the election timer on receiving the heartbeat
             self.reset_election_timer()
 
             # Send successful reply
@@ -227,27 +224,42 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                 term=self.currentTerm,
                 success=True,
             )
-        
+
     def update_follower_logs(self, prevLogIndex, leaderCommit, entries):
-        print(f"DEBUG: prevLogIndex: {prevLogIndex}, lenth of logs: {len(self.storage.logs)}")
+        print(f"DEBUG: prevLogIndex: {prevLogIndex}, length of logs: {len(self.storage.logs)}")
         for i in range(len(entries)):
-            if prevLogIndex + i + 1 >= len(self.storage.logs)-1:
-                break
-            if self.storage.logs[prevLogIndex + i+1].split(" ")[-1] != entries[i].term:
-                self.storage.logs = self.storage.logs[:prevLogIndex + i+1] 
-        for entry in entries:
-            if entry.operation == "NO-OP":
-                self.storage.append_log(entry.operation, entry.term)
-            else:
-                key = entry.operation.split(" ")[1]
-                value = entry.operation.split(" ")[2]
-                self.storage.append_log("SET", entry.term, key, value)
-        self.commitIndex= max(self.commitIndex, min(leaderCommit, prevLogIndex + len(entries)))
+            if prevLogIndex + i + 1 >= len(self.storage.logs):
+                self.storage.append_log(entries[i].operation, entries[i].term)
+            elif self.storage.logs[prevLogIndex + i + 1].split(" ")[-1] != entries[i].term:
+                self.storage.logs = self.storage.logs[:prevLogIndex + i + 1]
+                self.storage.append_log(entries[i].operation, entries[i].term)
+        self.commitIndex = max(self.commitIndex, min(leaderCommit, prevLogIndex + len(entries)))
         self.storage.update_metadata('commitIndex', self.commitIndex)
-        # commit entries upto commitIndex
-        for i in range(prevLogIndex+1, self.commitIndex+1):
+        # commit entries up to commitIndex
+        for i in range(prevLogIndex + 1, self.commitIndex + 1):
             print(f"DEBUG: COMMITTING LOG {i}")
-            self.apply_log(i)  
+            self.apply_log(i)
+        
+    # def update_follower_logs(self, prevLogIndex, leaderCommit, entries):
+    #     print(f"DEBUG: prevLogIndex: {prevLogIndex}, lenth of logs: {len(self.storage.logs)}")
+    #     for i in range(len(entries)):
+    #         if prevLogIndex + i + 1 >= len(self.storage.logs)-1:
+    #             break
+    #         if self.storage.logs[prevLogIndex + i+1].split(" ")[-1] != entries[i].term:
+    #             self.storage.logs = self.storage.logs[:prevLogIndex + i+1] 
+    #     for entry in entries:
+    #         if entry.operation == "NO-OP":
+    #             self.storage.append_log(entry.operation, entry.term)
+    #         else:
+    #             key = entry.operation.split(" ")[1]
+    #             value = entry.operation.split(" ")[2]
+    #             self.storage.append_log("SET", entry.term, key, value)
+    #     self.commitIndex= max(self.commitIndex, min(leaderCommit, prevLogIndex + len(entries)))
+    #     self.storage.update_metadata('commitIndex', self.commitIndex)
+    #     # commit entries upto commitIndex
+    #     for i in range(prevLogIndex+1, self.commitIndex+1):
+    #         print(f"DEBUG: COMMITTING LOG {i}")
+    #         self.apply_log(i)  
                     
     def apply_log(self, index):
         log = self.storage.logs[index]
@@ -293,7 +305,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                 if ack_success:
                     total_acks += 1
 
-        if total_acks <= (len(self.node_addresses)-1) // 2:
+        if total_acks <= (len(self.node_addresses) - 1) // 2:
             self.print_and_dump(f"Leader {self.node_id} lease renewal failed. Stepping Down.")
             self.role = 'follower'
             self.leaderId = None
@@ -301,15 +313,34 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
             return
 
         self.reacquire_lease()
-        # commit all entries till now
-        for i in range(self.commitIndex+1, len(self.storage.logs)):
-            self.apply_log(i)
-        self.commitIndex = len(self.storage.logs) - 1
-        self.storage.update_metadata('commitIndex', self.commitIndex)
+
+        # Commit only the entries that have been replicated to a majority
+        majority_commit_index = self.get_majority_commit_index()
+        if majority_commit_index > self.commitIndex:
+            self.print_and_dump(f"Node {self.node_id} committing entries up to index {majority_commit_index}")
+            for i in range(self.commitIndex + 1, majority_commit_index + 1):
+                self.apply_log(i)
+            self.commitIndex = majority_commit_index
+            self.storage.update_metadata('commitIndex', self.commitIndex)
 
         # Reschedule the heartbeat
         self.heartbeat_timer = threading.Timer(1, self.send_heartbeat)
         self.heartbeat_timer.start()
+
+    def get_majority_commit_index(self):
+        """
+        Determine the highest log index that has been replicated to a majority of the cluster.
+        """
+        commit_counts = [0] * (len(self.storage.logs))
+        for node_id, match_index in self.matchIndex.items():
+            for i in range(match_index + 1):
+                commit_counts[i] += 1
+
+        for i in range(len(self.storage.logs) - 1, -1, -1):
+            if commit_counts[i] > (len(self.node_addresses) - 1) // 2:
+                return i
+
+        return self.commitIndex
         
     def reacquire_lease(self):
         # restart the lease timer
@@ -375,6 +406,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                 trm = int(self.storage.logs[i].split(" ")[-1])
                 entry = raft_pb2.LogEntry(operation=op, term=trm)
                 entries.append(entry)
+
             response = stub.AppendEntries(raft_pb2.AppendEntriesRequest(
                 term=self.currentTerm,
                 leaderId=self.node_id,
@@ -390,15 +422,13 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                 self.matchIndex[node_id] = len(self.storage.logs) - 1
                 if len(entries) > 0:
                     self.print_and_dump(f"Node {self.node_id} successfully replicated log to {node}")
-                
-                # Check if we can commit more entries
-                if prevIndex + len(entries) < len(self.storage.logs) - 1 and self.commitIndex < prevIndex + len(entries) and int(self.storage.logs[prevIndex + len(entries)].split(" ")[-1]) == self.currentTerm:
-                    self.commitIndex = prevIndex + len(entries)
-                    self.storage.update_metadata('commitIndex', self.commitIndex)
-                    self.print_and_dump(f"Node {self.node_id} successfully committed log to {node}")
-                    
-                    # Commit the entries up to the new commitIndex
-                    for i in range(self.commitIndex - len(entries) + 1, self.commitIndex + 1):
+
+                # Commit the entries that have been replicated
+                for i in range(self.nextIndex[node_id] - len(entries), self.nextIndex[node_id]):
+                    if i > self.commitIndex:
+                        self.commitIndex = i
+                        self.storage.update_metadata('commitIndex', self.commitIndex)
+                        self.print_and_dump(f"Node {self.node_id} successfully committed log to {node}")
                         self.apply_log(i)
                 return True
             else:
