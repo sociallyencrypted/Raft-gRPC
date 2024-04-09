@@ -263,7 +263,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         self.print_and_dump("New Leader waiting for Old Leader Lease to timeout.")
         # print(f"DEBUG: Time left: {self.leaseTimer.interval}")
         # wait till lease timer expires
-        self.leaseTimer.finished.wait()
+        # self.leaseTimer.finished.wait()
         self.print_and_dump(f"Node {self.node_id} became the leader for term {self.currentTerm}")
         # Cancel the election timer as this node is now the leader
         if self.electionTimer is not None:
