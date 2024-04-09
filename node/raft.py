@@ -261,7 +261,7 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
         self.role = 'leader'
         self.leaderId = self.node_id
         self.print_and_dump("New Leader waiting for Old Leader Lease to timeout.")
-        print(f"DEBUG: Time left: {self.leaseTimer.interval}")
+        # print(f"DEBUG: Time left: {self.leaseTimer.interval}")
         # wait till lease timer expires
         self.leaseTimer.finished.wait()
         self.print_and_dump(f"Node {self.node_id} became the leader for term {self.currentTerm}")
