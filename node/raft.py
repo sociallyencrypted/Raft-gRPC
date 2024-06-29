@@ -185,38 +185,41 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
 
     def AppendEntries(self, request, context):
         with self.vote_count_lock:
+            
             if self.currentTerm > request.term:
                 return raft_pb2.AppendEntriesReply(term=self.currentTerm, success=False)
-
+            
             self.leaderId = request.leaderId
+            
             self.reset_election_timer()
-
+            
             if request.term > self.currentTerm:
                 self.currentTerm = request.term
                 self.storage.update_metadata('currentTerm', self.currentTerm)
                 self.votedFor = None
                 self.storage.update_metadata('votedFor', None)
-
+            
             self.role = "follower"
             print(f"Node {self.node_id} received AppendEntries request from leader {request.leaderId}")
-
+            
             if len(self.storage.logs) == 0:
                 # accept request
                 self.update_follower_logs(request.prevLogIndex, request.leaderCommit, request.entries)
                 self.print_and_dump(f"Node {self.node_id} accepted AppendEntries request from leader {request.leaderId}.")
                 self.reset_election_timer()
-                return raft_pb2.AppendEntriesReply(term=self.currentTerm, success=True)
-
-            if request.prevLogIndex > (len(self.storage.logs) - 1) or int(self.storage.logs[request.prevLogIndex].split(" ")[-1]) != request.prevLogTerm:
-                conflictingIndex = min(request.prevLogIndex, len(self.storage.logs) - 1)
+                return raft_pb2.AppendEntriesReply(term=self.currentTerm, success=True)       
+            
+            if request.prevLogIndex > (len(self.storage.logs)-1) or int(self.storage.logs[request.prevLogIndex].split(" ")[-1]) != request.prevLogTerm:
+                conflictingIndex = min(request.prevLogIndex, len(self.storage.logs)-1)
                 conflictingTerm = int(self.storage.logs[conflictingIndex].split(" ")[-1])
                 while conflictingIndex > self.commitIndex and int(self.storage.logs[conflictingIndex].split(" ")[-1]) == conflictingTerm:
                     conflictingIndex -= 1
-                return raft_pb2.AppendEntriesReply(term=self.currentTerm, success=False, conflictingIndex=max(self.commitIndex + 1, conflictingIndex), conflictingTerm=conflictingTerm)
-
+                return raft_pb2.AppendEntriesReply(term=self.currentTerm, success=False, conflictingIndex=max(self.commitIndex+1, conflictingIndex), conflictingTerm=conflictingTerm)
+            
             # Append the entries to the log
             self.update_follower_logs(request.prevLogIndex, request.leaderCommit, request.entries)
             self.print_and_dump(f"Node {self.node_id} accepted AppendEntries request from leader {request.leaderId}.")
+            # Reset the election timer on receiving the heartbeat
             self.reset_election_timer()
 
             # Send successful reply
@@ -224,42 +227,27 @@ class RaftNode(raft_pb2_grpc.RaftNodeServicer):
                 term=self.currentTerm,
                 success=True,
             )
-
-    def update_follower_logs(self, prevLogIndex, leaderCommit, entries):
-        print(f"DEBUG: prevLogIndex: {prevLogIndex}, length of logs: {len(self.storage.logs)}")
-        for i in range(len(entries)):
-            if prevLogIndex + i + 1 >= len(self.storage.logs):
-                self.storage.append_log(entries[i].operation, entries[i].term)
-            elif self.storage.logs[prevLogIndex + i + 1].split(" ")[-1] != entries[i].term:
-                self.storage.logs = self.storage.logs[:prevLogIndex + i + 1]
-                self.storage.append_log(entries[i].operation, entries[i].term)
-        self.commitIndex = max(self.commitIndex, min(leaderCommit, prevLogIndex + len(entries)))
-        self.storage.update_metadata('commitIndex', self.commitIndex)
-        # commit entries up to commitIndex
-        for i in range(prevLogIndex + 1, self.commitIndex + 1):
-            print(f"DEBUG: COMMITTING LOG {i}")
-            self.apply_log(i)
         
-    # def update_follower_logs(self, prevLogIndex, leaderCommit, entries):
-    #     print(f"DEBUG: prevLogIndex: {prevLogIndex}, lenth of logs: {len(self.storage.logs)}")
-    #     for i in range(len(entries)):
-    #         if prevLogIndex + i + 1 >= len(self.storage.logs)-1:
-    #             break
-    #         if self.storage.logs[prevLogIndex + i+1].split(" ")[-1] != entries[i].term:
-    #             self.storage.logs = self.storage.logs[:prevLogIndex + i+1] 
-    #     for entry in entries:
-    #         if entry.operation == "NO-OP":
-    #             self.storage.append_log(entry.operation, entry.term)
-    #         else:
-    #             key = entry.operation.split(" ")[1]
-    #             value = entry.operation.split(" ")[2]
-    #             self.storage.append_log("SET", entry.term, key, value)
-    #     self.commitIndex= max(self.commitIndex, min(leaderCommit, prevLogIndex + len(entries)))
-    #     self.storage.update_metadata('commitIndex', self.commitIndex)
-    #     # commit entries upto commitIndex
-    #     for i in range(prevLogIndex+1, self.commitIndex+1):
-    #         print(f"DEBUG: COMMITTING LOG {i}")
-    #         self.apply_log(i)  
+    def update_follower_logs(self, prevLogIndex, leaderCommit, entries):
+        print(f"DEBUG: prevLogIndex: {prevLogIndex}, lenth of logs: {len(self.storage.logs)}")
+        for i in range(len(entries)):
+            if prevLogIndex + i + 1 >= len(self.storage.logs)-1:
+                break
+            if self.storage.logs[prevLogIndex + i+1].split(" ")[-1] != entries[i].term:
+                self.storage.logs = self.storage.logs[:prevLogIndex + i+1] 
+        for entry in entries:
+            if entry.operation == "NO-OP":
+                self.storage.append_log(entry.operation, entry.term)
+            else:
+                key = entry.operation.split(" ")[1]
+                value = entry.operation.split(" ")[2]
+                self.storage.append_log("SET", entry.term, key, value)
+        self.commitIndex= max(self.commitIndex, min(leaderCommit, prevLogIndex + len(entries)))
+        self.storage.update_metadata('commitIndex', self.commitIndex)
+        # commit entries upto commitIndex
+        for i in range(prevLogIndex+1, self.commitIndex+1):
+            print(f"DEBUG: COMMITTING LOG {i}")
+            self.apply_log(i)  
                     
     def apply_log(self, index):
         log = self.storage.logs[index]
